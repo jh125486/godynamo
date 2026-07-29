@@ -9,14 +9,13 @@ import (
 )
 
 // Task is a small single-table-design entity. It embeds [godynamo.Model]
-// for the ID/Type/audit/Version bookkeeping fields, and its dynamo tag
-// groups Tasks by Project (the partition key) ordered by Status (the sort
-// key, with ID always appended last).
+// with no dynamo tag, so it uses the default (ID-only) PK/SK
+// ("Task#{ID}"/"Task#{ID}") and is discoverable via Query's type-index mode.
 type Task struct {
-	godynamo.Model `dynamo:"pk:Project;sk:Status"`
-	Project        string
-	Status         string
-	Title          string
+	godynamo.Model
+	Project string
+	Status  string
+	Title   string
 }
 
 // Example demonstrates constructing a *godynamo.DB and the fluent call
@@ -52,15 +51,14 @@ func Example() {
 	_ = got
 
 	openTasks, err := godynamo.Query[Task](ctx, db).
-		WherePK(godynamo.PK(&Task{Project: "roadmap"})).
-		SKBeginsWith("Task#open").
+		Filter("Status", "open").
 		All()
 	if err != nil {
 		panic(err)
 	}
 	_ = openTasks
 
-	updated, err := godynamo.Update[Task](ctx, db, task.ID).
+	updated, err := godynamo.Update[Task](db, task.ID).
 		Set("Status", "done").
 		IfVersion(task.Version).
 		Run(ctx)

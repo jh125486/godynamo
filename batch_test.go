@@ -230,6 +230,24 @@ func TestBatchGet_UnmarshalError(t *testing.T) {
 	}
 }
 
+func TestBatchGet_NonDefaultKey_ReturnsErrNonDefaultKey(t *testing.T) {
+	db := testDB(&stubClient{})
+
+	_, err := BatchGet[internalOrder](context.Background(), db).IDs(uuid.New()).Run()
+	if !errors.Is(err, ErrNonDefaultKey) {
+		t.Fatalf("error = %v, want wrapping ErrNonDefaultKey", err)
+	}
+}
+
+func TestBatchWrite_Delete_NonDefaultKey_ReturnsErrNonDefaultKey(t *testing.T) {
+	db := testDB(&stubClient{})
+
+	err := BatchWrite[internalOrder](context.Background(), db).Delete(uuid.New()).Run()
+	if !errors.Is(err, ErrNonDefaultKey) {
+		t.Fatalf("error = %v, want wrapping ErrNonDefaultKey", err)
+	}
+}
+
 func TestBatchWrite_PutAndDelete(t *testing.T) {
 	putItem := &widget{Model: Model{ID: uuid.New()}, Name: "new-gizmo"}
 	deleteID := uuid.New()

@@ -398,7 +398,7 @@ func TestUpdate_SetAndAdd(t *testing.T) {
 		},
 	})
 
-	got, err := Update[widget](context.Background(), db, id).
+	got, err := Update[widget](db, id).
 		Set("Name", "updated").
 		Add("ViewCount", 5).
 		Run(context.Background())
@@ -452,7 +452,7 @@ func TestUpdate_IfVersion_AddsCondition(t *testing.T) {
 		},
 	})
 
-	_, err := Update[widget](context.Background(), db, id).
+	_, err := Update[widget](db, id).
 		Set("Name", "v2").
 		IfVersion(7).
 		Run(context.Background())
@@ -482,7 +482,7 @@ func TestUpdate_ConditionalCheckFailed_TranslatesToOptimisticLock(t *testing.T) 
 		},
 	})
 
-	_, err := Update[widget](context.Background(), db, id).
+	_, err := Update[widget](db, id).
 		IfVersion(1).
 		Run(context.Background())
 	if !errors.Is(err, ErrOptimisticLock) {
@@ -631,9 +631,44 @@ func TestUpdate_UnmarshalError(t *testing.T) {
 		},
 	})
 
-	_, err = Update[badUnmarshalItem](context.Background(), db, id).Run(context.Background())
+	_, err = Update[badUnmarshalItem](db, id).Run(context.Background())
 	if err == nil {
 		t.Fatal("expected unmarshal error, got nil")
+	}
+}
+
+// The following tests confirm the [requiresDefaultKey] guard fires for
+// internalOrder (defined in tags_test.go), a fixture whose dynamo tag
+// references CustomerID/Status/CreatedDate rather than using the default
+// (ID-only) PK/SK -- and that, per the guard, none of these calls reach the
+// stub client at all (a nil function field would panic if invoked).
+
+func TestGet_NonDefaultKey_ReturnsErrNonDefaultKey(t *testing.T) {
+	db := testDB(&stubClient{})
+
+	_, err := Get[internalOrder](context.Background(), db, uuid.New())
+	if !errors.Is(err, ErrNonDefaultKey) {
+		t.Fatalf("error = %v, want wrapping ErrNonDefaultKey", err)
+	}
+}
+
+func TestDelete_NonDefaultKey_ReturnsErrNonDefaultKey(t *testing.T) {
+	db := testDB(&stubClient{})
+
+	err := Delete[internalOrder](context.Background(), db, uuid.New())
+	if !errors.Is(err, ErrNonDefaultKey) {
+		t.Fatalf("error = %v, want wrapping ErrNonDefaultKey", err)
+	}
+}
+
+func TestUpdate_NonDefaultKey_ReturnsErrNonDefaultKey(t *testing.T) {
+	db := testDB(&stubClient{})
+
+	_, err := Update[internalOrder](db, uuid.New()).
+		Set("Status", "shipped").
+		Run(context.Background())
+	if !errors.Is(err, ErrNonDefaultKey) {
+		t.Fatalf("error = %v, want wrapping ErrNonDefaultKey", err)
 	}
 }
 
@@ -647,7 +682,7 @@ func TestUpdate_EmptyFieldName_BuildError(t *testing.T) {
 		},
 	})
 
-	_, err := Update[widget](context.Background(), db, id).
+	_, err := Update[widget](db, id).
 		Set("", "invalid").
 		Run(context.Background())
 	if err == nil {

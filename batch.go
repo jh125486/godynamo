@@ -58,9 +58,10 @@ func (b *BatchGetBuilder[T]) IDs(ids ...uuid.UUID) *BatchGetBuilder[T] {
 
 // Run executes the batched fetch. Each id's key is computed via
 // [zeroKeys][T], the same zero-value-plus-ID approach [Get] uses — so, like
-// Get, Run only computes the correct key for models using the default
-// (ID-only) PK/SK; models whose dynamo tag references other sibling fields
-// will get a wrong key.
+// Get, Run has the same key-computation constraint: it only works correctly
+// for models using the default (ID-only) PK/SK, and returns an error
+// wrapping [ErrNonDefaultKey] for any other model rather than silently
+// computing a wrong key.
 //
 // Queued ids are chunked into groups of at most 100 (AWS's BatchGetItem
 // hard per-call limit) and issued as separate BatchGetItem calls,
@@ -79,6 +80,9 @@ func (b *BatchGetBuilder[T]) IDs(ids ...uuid.UUID) *BatchGetBuilder[T] {
 // linearly-growing backoff between attempts. If keys are still unprocessed
 // once retries are exhausted, Run returns an error.
 func (b *BatchGetBuilder[T]) Run() ([]T, error) {
+	if err := requiresDefaultKey[T]("BatchGetBuilder.Run"); err != nil {
+		return nil, err
+	}
 	typeName := reflect.TypeFor[T]().Name()
 	if len(b.ids) == 0 {
 		return nil, nil
@@ -185,9 +189,20 @@ func (b *BatchWriteBuilder[T]) Put(items ...*T) *BatchWriteBuilder[T] {
 }
 
 // Delete queues ids to be deleted. Each id's key is computed via
-// [zeroKeys][T], the same zero-value-plus-ID limitation as single-item
-// [Delete]: only correct for models using the default (ID-only) PK/SK.
+// [zeroKeys][T], the same key-computation constraint as single-item
+// [Delete]: only correct for models using the default (ID-only) PK/SK. For
+// any other model, Delete records an error wrapping [ErrNonDefaultKey] (via
+// the same deferred-error mechanism as [BatchWriteBuilder.Put]'s marshal
+// errors), surfaced when [BatchWriteBuilder.Run] is called, rather than
+// silently computing a wrong key.
 func (b *BatchWriteBuilder[T]) Delete(ids ...uuid.UUID) *BatchWriteBuilder[T] {
+	if b.err != nil {
+		return b
+	}
+	if err := requiresDefaultKey[T]("BatchWriteBuilder.Delete"); err != nil {
+		b.err = err
+		return b
+	}
 	for _, id := range ids {
 		pk, sk := zeroKeys[T](id)
 		b.writes = append(b.writes, types.WriteRequest{DeleteRequest: &types.DeleteRequest{Key: itemKey(pk, sk)}})

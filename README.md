@@ -29,13 +29,13 @@ import (
 	"github.com/jh125486/godynamo"
 )
 
-// Task embeds godynamo.Model and uses a dynamo tag to group tasks by
-// Project (partition key), ordered by Status (sort key).
+// Task embeds godynamo.Model with no dynamo tag, so it uses the default
+// (ID-only) PK/SK and is discoverable via Query's type-index mode.
 type Task struct {
-	godynamo.Model `dynamo:"pk:Project;sk:Status"`
-	Project        string
-	Status         string
-	Title          string
+	godynamo.Model
+	Project string
+	Status  string
+	Title   string
 }
 
 func main() {
@@ -59,14 +59,13 @@ func main() {
 	}
 
 	openTasks, err := godynamo.Query[Task](ctx, db).
-		WherePK(godynamo.PK(&Task{Project: "roadmap"})).
-		SKBeginsWith("Task#open").
+		Filter("Status", "open").
 		All()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	updated, err := godynamo.Update[Task](ctx, db, task.ID).
+	updated, err := godynamo.Update[Task](db, task.ID).
 		Set("Status", "done").
 		IfVersion(got.Version).
 		Run(ctx)
@@ -119,9 +118,10 @@ express. Unlike `Query`, it has no type-index/base-table mode distinction —
 you write the whole statement (including the table name) yourself:
 
 ```go
+pk, sk := godynamo.Keys(task)
 items, err := godynamo.Statement[Task](ctx, db,
 	`SELECT * FROM "my-table" WHERE PK = ? AND SK = ?`,
-	godynamo.PK(&Task{Project: "roadmap"}), "Task#open#"+task.ID.String(),
+	pk, sk,
 ).All()
 ```
 
@@ -170,9 +170,11 @@ Creating the table and index is out of scope for this package; see
 
 - `Get`, `Delete`, single-item `Update`, and `BatchGet`/`BatchWrite`'s
   `Delete` all compute their key from a zero-value `T` with only `Model.ID`
-  populated. This only produces the correct key for models using the
-  default (ID-only) PK/SK — models whose `dynamo` tag references other
-  sibling fields need `TransactGet`/`TransactWrite`, which key off a
+  populated, which only produces the correct key for models using the
+  default (ID-only) PK/SK. Calling any of them for a model whose `dynamo`
+  tag references other sibling fields returns an error wrapping
+  `ErrNonDefaultKey` rather than silently computing a wrong key — such
+  models need `TransactGet`/`TransactWrite`, which key off a
   caller-populated value instead, or a `Query`/`Scan`.
 - `BatchWrite` has no per-item `ConditionExpression` support — this is a
   hard AWS API limitation. Puts through `BatchWrite` are unconditional: no

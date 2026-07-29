@@ -33,12 +33,37 @@ func modelFieldOf(item any) reflect.Value {
 
 // zeroKeys computes the PK/SK for a zero-value T with only its Model.ID
 // field populated. See the doc comments on [Get], [Delete], and [Update]
-// for the limitation this implies for models with a tag-driven PK/SK.
+// for the limitation this implies for models with a tag-driven PK/SK. Every
+// caller of zeroKeys must first call [requiresDefaultKey] so that limitation
+// is enforced rather than silently producing a wrong key.
 func zeroKeys[T any](id uuid.UUID) (pk, sk string) {
 	var zero T
 	mf := modelFieldOf(&zero)
 	mf.FieldByName("ID").Set(reflect.ValueOf(id))
 	return PK(&zero), SK(&zero)
+}
+
+// requiresDefaultKey checks that T uses the default (ID-only) PK/SK — i.e.
+// its dynamo tag has no pk:/sk: clause referencing other fields. It exists
+// because [zeroKeys] computes a key from a zero-valued T with only Model.ID
+// populated: that's only correct when the key is derived solely from ID,
+// since any other referenced field would be zero-valued (and thus wrong) on
+// a freshly zeroed T.
+//
+// op names the calling function/method (e.g. "Get[T]") for the error
+// message. requiresDefaultKey returns nil for a default-keyed T, or an
+// error wrapping [ErrNonDefaultKey] otherwise.
+func requiresDefaultKey[T any](op string) error {
+	mt := parseTags(reflect.TypeFor[T]())
+	if len(mt.pkFields) == 0 && len(mt.skFields) == 0 {
+		return nil
+	}
+	var zero T
+	return fmt.Errorf(
+		"godynamo: %s requires T to use the default (ID-only) PK/SK; "+
+			"%T's dynamo tag references other fields — use Query or TransactGet instead: %w",
+		op, zero, ErrNonDefaultKey,
+	)
 }
 
 // itemKey builds the DynamoDB key map ({"PK": ..., "SK": ...}) used by
@@ -202,12 +227,14 @@ func Put[T any](ctx context.Context, db *DB, item *T) error {
 //
 // Get only computes the correct key for models using the default PK/SK
 // (no pk:/sk: tag clause referencing other fields): it builds the key from
-// a zero-value T with only Model.ID populated. Models whose dynamo tag
-// references other sibling fields will get a wrong key from a
-// partially-populated zero value, since those other fields aren't set. A
-// lower-level, key-based accessor for such models is out of scope for
-// Phase 2.
+// a zero-value T with only Model.ID populated. For any other model, Get
+// returns an error wrapping [ErrNonDefaultKey] instead of silently computing
+// a wrong key from that zero value — use [Query] or [TransactGet] for such
+// models.
 func Get[T any](ctx context.Context, db *DB, id uuid.UUID) (*T, error) {
+	if err := requiresDefaultKey[T]("Get[T]"); err != nil {
+		return nil, err
+	}
 	typeName := reflect.TypeFor[T]().Name()
 	pk, sk := zeroKeys[T](id)
 
@@ -233,9 +260,14 @@ func Get[T any](ctx context.Context, db *DB, id uuid.UUID) (*T, error) {
 // non-existent item is treated as success, matching DynamoDB's default
 // DeleteItem behavior (no error on a missing key).
 //
-// Delete has the same zero-value-plus-ID key-computation limitation as
-// [Get]: it only works correctly for models using the default PK/SK.
+// Delete has the same key-computation constraint as [Get]: it only works
+// correctly for models using the default PK/SK, and returns an error
+// wrapping [ErrNonDefaultKey] for any other model rather than silently
+// computing a wrong key.
 func Delete[T any](ctx context.Context, db *DB, id uuid.UUID) error {
+	if err := requiresDefaultKey[T]("Delete[T]"); err != nil {
+		return err
+	}
 	typeName := reflect.TypeFor[T]().Name()
 	pk, sk := zeroKeys[T](id)
 
@@ -266,12 +298,15 @@ type UpdateBuilder[T any] struct {
 }
 
 // Update returns a fluent builder for updating the item of type T
-// identified by id. No I/O happens until [UpdateBuilder.Run] is called.
+// identified by id. No I/O happens until [UpdateBuilder.Run] is called, so
+// Update itself takes no context.Context — unlike the rest of this package's
+// builders, which capture ctx once at construction (even though they too do
+// no I/O until a terminal method), Update is honest that it does no I/O at
+// all outside Run and asks for ctx there instead.
 //
 // Chain [UpdateBuilder.Set] / [UpdateBuilder.Add] / [UpdateBuilder.IfVersion]
 // to configure the update.
-func Update[T any](ctx context.Context, db *DB, id uuid.UUID) *UpdateBuilder[T] {
-	_ = ctx // no I/O is performed until Run
+func Update[T any](db *DB, id uuid.UUID) *UpdateBuilder[T] {
 	return &UpdateBuilder[T]{db: db, id: id}
 }
 
@@ -306,9 +341,14 @@ func (b *UpdateBuilder[T]) IfVersion(v int) *UpdateBuilder[T] {
 // [ErrOptimisticLock]. Without IfVersion, the increment is unconditional
 // ("blind") — document this tradeoff to callers that need the lock.
 //
-// Run has the same zero-value-plus-ID key-computation limitation as [Get]:
-// it only works correctly for models using the default PK/SK.
+// Run has the same key-computation constraint as [Get]: it only works
+// correctly for models using the default PK/SK, and returns an error
+// wrapping [ErrNonDefaultKey] for any other model rather than silently
+// computing a wrong key.
 func (b *UpdateBuilder[T]) Run(ctx context.Context) (*T, error) {
+	if err := requiresDefaultKey[T]("UpdateBuilder.Run"); err != nil {
+		return nil, err
+	}
 	typeName := reflect.TypeFor[T]().Name()
 	pk, sk := zeroKeys[T](b.id)
 

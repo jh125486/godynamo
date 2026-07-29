@@ -196,7 +196,7 @@ func TestIntegration_EndToEnd(t *testing.T) {
 			t.Fatalf("Put: %v", err)
 		}
 
-		updated, err := godynamo.Update[Product](ctx, db, p.ID).
+		updated, err := godynamo.Update[Product](db, p.ID).
 			Set("Name", "Gadget Pro").
 			Add("Price", 5).
 			IfVersion(p.Version).
