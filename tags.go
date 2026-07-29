@@ -56,19 +56,6 @@ type modelTags struct {
 // cost of tag parsing is paid at most once per type, not once per call.
 var tagCache sync.Map // map[reflect.Type]*modelTags
 
-// structTypeOf normalizes v (a pointer to, or value of, a struct) to its
-// struct reflect.Type. It panics if v is not ultimately a struct.
-func structTypeOf(v any) reflect.Type {
-	t := reflect.TypeOf(v)
-	for t != nil && t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-	if t == nil || t.Kind() != reflect.Struct {
-		panic("godynamo: value must be a struct or pointer to struct")
-	}
-	return t
-}
-
 // parseTags returns the cached (or freshly parsed) modelTags for struct
 // type t. It panics if t does not embed godynamo.Model.
 func parseTags(t reflect.Type) *modelTags {
