@@ -1,5 +1,8 @@
 # godynamo
 
+[![Tests](https://github.com/jh125486/godynamo/actions/workflows/test.yaml/badge.svg)](https://github.com/jh125486/godynamo/actions/workflows/test.yaml)
+[![CodeQL](https://github.com/jh125486/godynamo/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/jh125486/godynamo/actions/workflows/codeql-analysis.yml)
+
 `godynamo` is an opinionated, fluent, generics-based library for modeling AWS
 DynamoDB single-table designs in Go. You embed a common `Model` struct in
 your entity types, describe their partition/sort keys with a single struct
