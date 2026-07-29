@@ -3,18 +3,27 @@
 # Please see the documentation for all configuration options:
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 #
-# NOTE: this repo also has a tools.mod (Go 1.24+ `tool` directive pinning file for
-# golangci-lint/govulncheck/modernize/gotestsum). Dependabot's `gomod` ecosystem only
-# looks for a file literally named `go.mod` in `directory` and has no supported way to
-# point at a differently-named go.mod-style file, so tools.mod is NOT covered by this
-# file. Instead, .github/workflows/update-tools.yaml runs `make update-tools` on a
-# weekly schedule (and on manual dispatch) and opens a PR when tools.mod/tools.sum
-# change — a hand-rolled Dependabot-equivalent scoped to just that one file pair.
+# NOTE: this repo also has a separate dev-tools module at tools/go.mod (Go 1.24+
+# `tool` directive pinning file for golangci-lint/govulncheck/modernize/gotestsum),
+# isolated from the root go.mod so a bad upstream tool release can't affect the
+# module graph the real package builds against. Since it's a real go.mod file (just
+# in its own subdirectory), Dependabot's `gomod` ecosystem tracks it natively via the
+# second entry below (directory: "/tools") — no hand-rolled workaround needed.
+# .github/workflows/update-tools.yaml is now a manual-only fallback, not the primary
+# update mechanism for tools/go.mod.
 
 version: 2
 updates:
   - package-ecosystem: "gomod" # See documentation for possible values
     directory: "/" # Location of package manifests
+    schedule:
+      interval: "daily"
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
+  - package-ecosystem: "gomod" # See documentation for possible values
+    directory: "/tools" # Location of package manifests (isolated dev-tools module)
     schedule:
       interval: "daily"
     groups:

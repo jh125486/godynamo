@@ -1,8 +1,13 @@
 name: update-tools
 
+# Manual-only fallback: Dependabot now natively tracks tools/go.mod (see
+# .github/dependabot.yml's "/tools" gomod entry) and opens version-bump PRs for it
+# on the same daily schedule as the root module, so this workflow no longer needs a
+# cron trigger of its own. Run it by hand when you need something Dependabot's
+# direct-dependency-focused PRs won't give you on their own — e.g. a full
+# `go mod tidy`-style refresh of tools/go.sum's transitive entries, or an emergency
+# immediate tool bump without waiting for Dependabot's daily run.
 on:
-  schedule:
-    - cron: '0 6 * * 1'  # weekly, Monday 06:00 UTC
   workflow_dispatch: {}
 
 permissions:
@@ -24,21 +29,27 @@ jobs:
       - name: Update pinned dev tools
         run: make update-tools
 
-      - name: Open PR if tools.mod/tools.sum changed
+      - name: Open PR if tools/go.mod or tools/go.sum changed
         uses: peter-evans/create-pull-request@v8
         with:
           commit-message: "chore(tools): update pinned dev tool versions"
           title: "chore(tools): update pinned dev tool versions"
           body: |
-            Automated update of tools.mod-pinned dev tools (golangci-lint, govulncheck,
-            modernize, gotestsum) via `make update-tools`.
+            Manual-fallback update of tools/go.mod-pinned dev tools (golangci-lint,
+            govulncheck, modernize, gotestsum) via `make update-tools`.
 
-            tools.mod is intentionally isolated from go.mod so a bad upstream tool release
-            can't break production builds — review the diff and let CI (the `test` workflow's
-            lint/vuln-check-adjacent steps, and this PR's own required status check) pass
-            before merging.
+            Dependabot now natively tracks tools/go.mod (it's a real go.mod, just in its
+            own subdirectory) and opens its own version-bump PRs on a daily schedule, so
+            this workflow is only needed for things Dependabot's direct-dependency-focused
+            PRs don't cover on their own — e.g. a full `go mod tidy`-style refresh of
+            tools/go.sum's transitive entries, or an emergency immediate tool bump.
+
+            tools/go.mod is intentionally isolated from go.mod so a bad upstream tool
+            release can't break production builds — review the diff and let CI (the `test`
+            workflow's lint/vuln-check-adjacent steps, and this PR's own required status
+            check) pass before merging.
           branch: chore/update-tools
           delete-branch: true
           add-paths: |
-            tools.mod
-            tools.sum
+            tools/go.mod
+            tools/go.sum
