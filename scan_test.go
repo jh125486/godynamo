@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
@@ -80,6 +81,216 @@ func TestScan_MultiFilter_ANDed(t *testing.T) {
 	}
 	if captured.FilterExpression == nil || !containsAnd(*captured.FilterExpression) {
 		t.Errorf("FilterExpression = %v, want an AND of both filters", captured.FilterExpression)
+	}
+}
+
+func TestScan_FilterNotEqual(t *testing.T) {
+	var captured *dynamodb.ScanInput
+	db := testDB(&stubClient{
+		scanFn: func(_ context.Context, in *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
+			captured = in
+			return &dynamodb.ScanOutput{}, nil
+		},
+	})
+
+	if _, err := Scan[widget](context.Background(), db).FilterNotEqual("Name", "gizmo").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "<>") {
+		t.Errorf("FilterExpression = %v, want a <> condition", captured.FilterExpression)
+	}
+}
+
+func TestScan_FilterGreaterThan(t *testing.T) {
+	var captured *dynamodb.ScanInput
+	db := testDB(&stubClient{
+		scanFn: func(_ context.Context, in *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
+			captured = in
+			return &dynamodb.ScanOutput{}, nil
+		},
+	})
+
+	if _, err := Scan[widget](context.Background(), db).FilterGreaterThan("Name", "m").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, ">") {
+		t.Errorf("FilterExpression = %v, want a > condition", captured.FilterExpression)
+	}
+}
+
+func TestScan_FilterGreaterOrEqual(t *testing.T) {
+	var captured *dynamodb.ScanInput
+	db := testDB(&stubClient{
+		scanFn: func(_ context.Context, in *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
+			captured = in
+			return &dynamodb.ScanOutput{}, nil
+		},
+	})
+
+	if _, err := Scan[widget](context.Background(), db).FilterGreaterOrEqual("Name", "m").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, ">=") {
+		t.Errorf("FilterExpression = %v, want a >= condition", captured.FilterExpression)
+	}
+}
+
+func TestScan_FilterLessThan(t *testing.T) {
+	var captured *dynamodb.ScanInput
+	db := testDB(&stubClient{
+		scanFn: func(_ context.Context, in *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
+			captured = in
+			return &dynamodb.ScanOutput{}, nil
+		},
+	})
+
+	if _, err := Scan[widget](context.Background(), db).FilterLessThan("Name", "m").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "<") {
+		t.Errorf("FilterExpression = %v, want a < condition", captured.FilterExpression)
+	}
+}
+
+func TestScan_FilterLessOrEqual(t *testing.T) {
+	var captured *dynamodb.ScanInput
+	db := testDB(&stubClient{
+		scanFn: func(_ context.Context, in *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
+			captured = in
+			return &dynamodb.ScanOutput{}, nil
+		},
+	})
+
+	if _, err := Scan[widget](context.Background(), db).FilterLessOrEqual("Name", "m").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "<=") {
+		t.Errorf("FilterExpression = %v, want a <= condition", captured.FilterExpression)
+	}
+}
+
+func TestScan_FilterBeginsWith(t *testing.T) {
+	var captured *dynamodb.ScanInput
+	db := testDB(&stubClient{
+		scanFn: func(_ context.Context, in *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
+			captured = in
+			return &dynamodb.ScanOutput{}, nil
+		},
+	})
+
+	if _, err := Scan[widget](context.Background(), db).FilterBeginsWith("Name", "giz").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "begins_with") {
+		t.Errorf("FilterExpression = %v, want a begins_with condition", captured.FilterExpression)
+	}
+}
+
+func TestScan_FilterContains(t *testing.T) {
+	var captured *dynamodb.ScanInput
+	db := testDB(&stubClient{
+		scanFn: func(_ context.Context, in *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
+			captured = in
+			return &dynamodb.ScanOutput{}, nil
+		},
+	})
+
+	if _, err := Scan[widget](context.Background(), db).FilterContains("Name", "izm").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "contains") {
+		t.Errorf("FilterExpression = %v, want a contains condition", captured.FilterExpression)
+	}
+}
+
+func TestScan_FilterExists(t *testing.T) {
+	var captured *dynamodb.ScanInput
+	db := testDB(&stubClient{
+		scanFn: func(_ context.Context, in *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
+			captured = in
+			return &dynamodb.ScanOutput{}, nil
+		},
+	})
+
+	if _, err := Scan[widget](context.Background(), db).FilterExists("Name").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "attribute_exists") {
+		t.Errorf("FilterExpression = %v, want an attribute_exists condition", captured.FilterExpression)
+	}
+}
+
+func TestScan_FilterNotExists(t *testing.T) {
+	var captured *dynamodb.ScanInput
+	db := testDB(&stubClient{
+		scanFn: func(_ context.Context, in *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
+			captured = in
+			return &dynamodb.ScanOutput{}, nil
+		},
+	})
+
+	if _, err := Scan[widget](context.Background(), db).FilterNotExists("Name").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "attribute_not_exists") {
+		t.Errorf("FilterExpression = %v, want an attribute_not_exists condition", captured.FilterExpression)
+	}
+}
+
+func TestScan_MultiFilter_EqualityAndOperator_ANDed(t *testing.T) {
+	var captured *dynamodb.ScanInput
+	db := testDB(&stubClient{
+		scanFn: func(_ context.Context, in *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
+			captured = in
+			return &dynamodb.ScanOutput{}, nil
+		},
+	})
+
+	if _, err := Scan[widget](context.Background(), db).
+		Filter("Name", "gizmo").
+		FilterLessThan("Name", "z").
+		All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !containsAnd(*captured.FilterExpression) {
+		t.Errorf("FilterExpression = %v, want an AND of both filters", captured.FilterExpression)
+	}
+}
+
+func TestScan_Filter_TaggedField_ResolvesToDynamodbavName(t *testing.T) {
+	var captured *dynamodb.ScanInput
+	db := testDB(&stubClient{
+		scanFn: func(_ context.Context, in *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
+			captured = in
+			return &dynamodb.ScanOutput{}, nil
+		},
+	})
+
+	if _, err := Scan[taggedWidget](context.Background(), db).Filter("NickName", "Bob").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if !namesContain(captured.ExpressionAttributeNames, "custom_name") {
+		t.Errorf("ExpressionAttributeNames = %v, want an alias for %q", captured.ExpressionAttributeNames, "custom_name")
+	}
+	if namesContain(captured.ExpressionAttributeNames, "NickName") {
+		t.Errorf("ExpressionAttributeNames = %v, want no alias for the Go field name %q", captured.ExpressionAttributeNames, "NickName")
+	}
+}
+
+func TestScan_Filter_NoTag_ResolvesToFieldNameUnchanged(t *testing.T) {
+	var captured *dynamodb.ScanInput
+	db := testDB(&stubClient{
+		scanFn: func(_ context.Context, in *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
+			captured = in
+			return &dynamodb.ScanOutput{}, nil
+		},
+	})
+
+	if _, err := Scan[taggedWidget](context.Background(), db).Filter("Name", "gizmo").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if !namesContain(captured.ExpressionAttributeNames, "Name") {
+		t.Errorf("ExpressionAttributeNames = %v, want an alias for the untagged field name %q", captured.ExpressionAttributeNames, "Name")
 	}
 }
 

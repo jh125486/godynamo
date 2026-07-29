@@ -111,3 +111,44 @@ func splitFields(val string) []string {
 	}
 	return fields
 }
+
+// dynamodbavTagKey is the struct tag key attributevalue.MarshalMap/
+// UnmarshalMap read to resolve a Go field to its DynamoDB attribute name.
+const dynamodbavTagKey = "dynamodbav"
+
+// resolveAttrName resolves a Go field name on t to the DynamoDB attribute
+// name attributevalue.MarshalMap actually marshals it under: the value of a
+// `dynamodbav:"..."` struct tag on the field (the substring before the
+// first comma — e.g. `dynamodbav:"custom_name,omitempty"` resolves to
+// "custom_name"), or — if the field isn't found on t, has no such tag, or
+// the tag's name portion is empty or "-" — goFieldName itself, unchanged.
+//
+// This mirrors attributevalue's own tag resolution (aws-sdk-go-v2's
+// feature/dynamodb/attributevalue package: see field.go's buildField,
+// which sets a field's marshaled Name from tag.Name only when
+// len(tag.Name) != 0, and tag.go's parseTagStr, which treats a "-" tag
+// name as Ignore rather than a literal override — both leave the Go field
+// name as the marshaled name in every other case), so callers that pass a
+// Go field name into a DynamoDB expression (e.g. [QueryBuilder.Filter],
+// [UpdateBuilder.Set]) get exactly the attribute name their item was
+// actually marshaled under.
+//
+// resolveAttrName never panics: a field name that doesn't exist on t falls
+// straight through unchanged, so existing error paths (e.g.
+// expression.Name("") failing to build) still trigger exactly as they did
+// before this resolution step existed.
+func resolveAttrName(t reflect.Type, goFieldName string) string {
+	field, ok := t.FieldByName(goFieldName)
+	if !ok {
+		return goFieldName
+	}
+	tagStr, ok := field.Tag.Lookup(dynamodbavTagKey)
+	if !ok {
+		return goFieldName
+	}
+	name, _, _ := strings.Cut(tagStr, ",")
+	if name == "" || name == "-" {
+		return goFieldName
+	}
+	return name
+}

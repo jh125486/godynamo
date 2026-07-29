@@ -87,9 +87,19 @@ func startDynamoDBLocal(t *testing.T) *dynamodb.Client {
 }
 
 // createTestTable creates the single-table-design table (PK/SK base table
-// plus the GSI1 type index) that godynamo requires, and waits for it to
-// become ACTIVE. It returns the table name.
+// plus the GSI1 type index, using the default "GSI1PK" partition-key
+// attribute name) that godynamo requires, and waits for it to become
+// ACTIVE. It returns the table name.
 func createTestTable(t *testing.T, client *dynamodb.Client) string {
+	t.Helper()
+	return createTestTableWithGSI1PKAttr(t, client, "GSI1PK")
+}
+
+// createTestTableWithGSI1PKAttr is [createTestTable] parameterized by the
+// GSI1 partition-key attribute name, to exercise [godynamo.WithGSI1PKAttr]
+// against a real backend whose GSI schema actually uses a non-default
+// attribute name.
+func createTestTableWithGSI1PKAttr(t *testing.T, client *dynamodb.Client, gsi1PKAttr string) string {
 	t.Helper()
 	ctx := context.Background()
 	table := "godynamo-integration-" + uuid.NewString()
@@ -100,7 +110,7 @@ func createTestTable(t *testing.T, client *dynamodb.Client) string {
 		AttributeDefinitions: []types.AttributeDefinition{
 			{AttributeName: aws.String("PK"), AttributeType: types.ScalarAttributeTypeS},
 			{AttributeName: aws.String("SK"), AttributeType: types.ScalarAttributeTypeS},
-			{AttributeName: aws.String("GSI1PK"), AttributeType: types.ScalarAttributeTypeS},
+			{AttributeName: aws.String(gsi1PKAttr), AttributeType: types.ScalarAttributeTypeS},
 		},
 		KeySchema: []types.KeySchemaElement{
 			{AttributeName: aws.String("PK"), KeyType: types.KeyTypeHash},
@@ -110,7 +120,7 @@ func createTestTable(t *testing.T, client *dynamodb.Client) string {
 			{
 				IndexName: aws.String("GSI1"),
 				KeySchema: []types.KeySchemaElement{
-					{AttributeName: aws.String("GSI1PK"), KeyType: types.KeyTypeHash},
+					{AttributeName: aws.String(gsi1PKAttr), KeyType: types.KeyTypeHash},
 					{AttributeName: aws.String("SK"), KeyType: types.KeyTypeRange},
 				},
 				Projection: &types.Projection{ProjectionType: types.ProjectionTypeAll},
@@ -130,6 +140,17 @@ func createTestTable(t *testing.T, client *dynamodb.Client) string {
 	}
 
 	return table
+}
+
+// TaggedItem exercises the dynamodbav-tag resolution path for real: its
+// Nickname Go field is marshaled under the "nick_name" attribute (per its
+// struct tag), so filtering by the Go field name "Nickname" only matches
+// end-to-end if QueryBuilder.Filter/ScanBuilder.Filter actually resolve it
+// to "nick_name" before the request is sent.
+type TaggedItem struct {
+	godynamo.Model
+	Nickname string `dynamodbav:"nick_name"`
+	Score    int
 }
 
 // TestIntegration_EndToEnd walks the full godynamo surface against a real
@@ -354,6 +375,80 @@ func TestIntegration_EndToEnd(t *testing.T) {
 		}
 		if got.Name != "Transacted" || got.Price != 99 {
 			t.Fatalf("unexpected item from TransactGet: %+v", got)
+		}
+	})
+
+	t.Run("FilterOperatorsAndTaggedFieldResolution", func(t *testing.T) {
+		items := []*TaggedItem{
+			{Nickname: "alpha", Score: 10},
+			{Nickname: "beta", Score: 20},
+			{Nickname: "gamma", Score: 30},
+		}
+		for _, it := range items {
+			if err := godynamo.Put(ctx, db, it); err != nil {
+				t.Fatalf("Put: %v", err)
+			}
+		}
+
+		// Smoke-test a new non-equality Filter operator for real.
+		high, err := godynamo.Query[TaggedItem](ctx, db).FilterGreaterThan("Score", 15).All()
+		if err != nil {
+			t.Fatalf("Query.All (FilterGreaterThan): %v", err)
+		}
+		gotScores := make(map[int]bool, len(high))
+		for _, it := range high {
+			gotScores[it.Score] = true
+		}
+		if !gotScores[20] || !gotScores[30] || gotScores[10] {
+			t.Fatalf("FilterGreaterThan(Score, 15) = %+v, want scores {20,30} present and 10 absent", high)
+		}
+
+		// Filter("Nickname", ...) exercises dynamodbav resolution for real:
+		// Nickname is marshaled under "nick_name", so this only matches if
+		// QueryBuilder.Filter resolved the Go field name correctly.
+		matched, err := godynamo.Query[TaggedItem](ctx, db).Filter("Nickname", "beta").All()
+		if err != nil {
+			t.Fatalf("Query.All (tagged Filter): %v", err)
+		}
+		if len(matched) != 1 || matched[0].Nickname != "beta" {
+			t.Fatalf("Filter(Nickname, beta) = %+v, want exactly one item with Nickname=beta", matched)
+		}
+
+		// Same dynamodbav-resolution smoke test through ScanBuilder, using a
+		// different new operator (FilterBeginsWith).
+		scanned, err := godynamo.Scan[TaggedItem](ctx, db).FilterBeginsWith("Nickname", "al").All()
+		if err != nil {
+			t.Fatalf("Scan.All (FilterBeginsWith, tagged): %v", err)
+		}
+		if len(scanned) != 1 || scanned[0].Nickname != "alpha" {
+			t.Fatalf("Scan FilterBeginsWith(Nickname, al) = %+v, want exactly one item with Nickname=alpha", scanned)
+		}
+	})
+
+	t.Run("CustomGSI1PKAttr", func(t *testing.T) {
+		// Requires its own table whose GSI's partition key uses a
+		// non-default attribute name, to prove WithGSI1PKAttr changes both
+		// what Put writes and what Query's type-index mode reads, for real.
+		table2 := createTestTableWithGSI1PKAttr(t, client, "TypeKey")
+		db2 := godynamo.New(client, table2, godynamo.WithGSI1PKAttr("TypeKey"))
+
+		p := &Product{Name: "CustomAttrWidget", Price: 5}
+		if err := godynamo.Put(ctx, db2, p); err != nil {
+			t.Fatalf("Put: %v", err)
+		}
+
+		items, err := godynamo.Query[Product](ctx, db2).All()
+		if err != nil {
+			t.Fatalf("Query.All: %v", err)
+		}
+		found := false
+		for _, it := range items {
+			if it.ID == p.ID {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("expected Query.All (custom GSI1PK attr) to include Product %s", p.ID)
 		}
 	})
 

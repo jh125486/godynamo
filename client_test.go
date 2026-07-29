@@ -29,6 +29,9 @@ func TestNew_Defaults(t *testing.T) {
 	if db.gsi1Name != defaultGSI1Name {
 		t.Errorf("gsi1Name = %q, want default %q", db.gsi1Name, defaultGSI1Name)
 	}
+	if db.gsi1PKAttr != defaultGSI1PKAttr {
+		t.Errorf("gsi1PKAttr = %q, want default %q", db.gsi1PKAttr, defaultGSI1PKAttr)
+	}
 	if db.clock == nil {
 		t.Fatal("clock is nil, want time.Now by default")
 	}
@@ -54,12 +57,16 @@ func TestNew_WithOptions(t *testing.T) {
 	fixed := time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)
 	db := New(client, "my-table",
 		WithGSI1Name("CustomGSI"),
+		WithGSI1PKAttr("CustomGSI1PK"),
 		WithClock(func() time.Time { return fixed }),
 		WithActor(func(context.Context) string { return "svc-account" }),
 	)
 
 	if db.gsi1Name != "CustomGSI" {
 		t.Errorf("gsi1Name = %q, want %q", db.gsi1Name, "CustomGSI")
+	}
+	if db.gsi1PKAttr != "CustomGSI1PK" {
+		t.Errorf("gsi1PKAttr = %q, want %q", db.gsi1PKAttr, "CustomGSI1PK")
 	}
 	if got := db.clock(); !got.Equal(fixed) {
 		t.Errorf("clock() = %v, want %v", got, fixed)

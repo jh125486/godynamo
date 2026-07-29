@@ -142,21 +142,26 @@ and `ExecuteTransaction` are out of scope; use `Put`/`Update`/`Delete`,
 Type-index queries (`Query[T](ctx, db)` with no `WherePK` call) list every
 item of a given Go type by querying a global secondary index for
 `GSI1PK = "TypeName"`. Your table must have a GSI (default name `"GSI1"`,
-overridable via `WithGSI1Name`) with partition key `GSI1PK` (String) and
-sort key `SK` (String) — the GSI reuses the base table's `SK` attribute as
-its own range key rather than requiring a separate `GSI1SK` attribute.
-Creating the table and index is out of scope for this package; see
-`integration_test.go` for a `CreateTable` call that sets one up correctly.
+overridable via `WithGSI1Name`) with partition key `GSI1PK` (String,
+overridable via `WithGSI1PKAttr`) and sort key `SK` (String) — the GSI
+reuses the base table's `SK` attribute as its own range key rather than
+requiring a separate `GSI1SK` attribute. Creating the table and index is
+out of scope for this package; see `integration_test.go` for a
+`CreateTable` call that sets one up correctly.
 
 ## What's supported
 
 - **CRUD**: `Put` (create-or-update with optimistic locking via `Version`),
   `Get`, `Delete`, `Update` (fluent `Set`/`Add`/`IfVersion`).
 - **Query**: type-index mode and base-table mode, `SKEquals` /
-  `SKBeginsWith` / `SKBetween`, equality `Filter`, `Limit`, exhaustive
-  `All()`, and cursor-based `Page(cursor)`.
-- **Scan**: base-table scan with equality `Filter`, `Limit`, and
-  `Parallel(totalSegments)` for concurrent segment scans.
+  `SKBeginsWith` / `SKBetween`, `Filter`/`FilterEqual`/`FilterNotEqual`/
+  `FilterGreaterThan`/`FilterGreaterOrEqual`/`FilterLessThan`/
+  `FilterLessOrEqual`/`FilterBeginsWith`/`FilterContains`/`FilterExists`/
+  `FilterNotExists` (ANDed together), `Limit`, exhaustive `All()`, and
+  cursor-based `Page(cursor)`.
+- **Scan**: base-table scan with the same `Filter*` operator family as
+  `Query`, `Limit`, and `Parallel(totalSegments)` for concurrent segment
+  scans.
 - **Batch**: `BatchGet`/`BatchWrite`, chunked to AWS's per-call limits (100
   keys / 25 write requests) with automatic retry of
   `UnprocessedKeys`/`UnprocessedItems`.
@@ -180,8 +185,11 @@ Creating the table and index is out of scope for this package; see
   hard AWS API limitation. Puts through `BatchWrite` are unconditional: no
   `attribute_not_exists` protection against a double-create, no
   optimistic-lock check against a concurrent update.
-- `Query` and `Scan` filters (`Filter(field, value)`) only support
-  equality; other operators are out of scope.
+- `Query`/`Scan` `Filter*` methods, and `UpdateBuilder.Set`/`Add`, take a Go
+  field name on `T` — the same vocabulary the `pk:`/`sk:` tag clauses use —
+  not necessarily the marshaled DynamoDB attribute name; a field's
+  `dynamodbav:"..."` struct tag override, if present, is resolved
+  automatically.
 - `TransactGet`/`TransactWrite` hard-error if more than 100 items/entries
   are queued rather than silently chunking — chunking a transaction would
   break its atomicity guarantee, so callers must keep transactions at or

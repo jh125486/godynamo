@@ -3,6 +3,7 @@ package godynamo
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
@@ -182,6 +183,245 @@ func TestQuery_Filter(t *testing.T) {
 	}
 	if !valuesContainS(captured.ExpressionAttributeValues, "gizmo") {
 		t.Errorf("ExpressionAttributeValues = %v, want a value of %q", captured.ExpressionAttributeValues, "gizmo")
+	}
+}
+
+func TestQuery_FilterNotEqual(t *testing.T) {
+	var captured *dynamodb.QueryInput
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			captured = in
+			return &dynamodb.QueryOutput{}, nil
+		},
+	})
+
+	if _, err := Query[widget](context.Background(), db).FilterNotEqual("Name", "gizmo").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "<>") {
+		t.Errorf("FilterExpression = %v, want a <> condition", captured.FilterExpression)
+	}
+	if !valuesContainS(captured.ExpressionAttributeValues, "gizmo") {
+		t.Errorf("ExpressionAttributeValues = %v, want a value of %q", captured.ExpressionAttributeValues, "gizmo")
+	}
+}
+
+func TestQuery_FilterGreaterThan(t *testing.T) {
+	var captured *dynamodb.QueryInput
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			captured = in
+			return &dynamodb.QueryOutput{}, nil
+		},
+	})
+
+	if _, err := Query[widget](context.Background(), db).FilterGreaterThan("Name", "m").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, ">") {
+		t.Errorf("FilterExpression = %v, want a > condition", captured.FilterExpression)
+	}
+}
+
+func TestQuery_FilterGreaterOrEqual(t *testing.T) {
+	var captured *dynamodb.QueryInput
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			captured = in
+			return &dynamodb.QueryOutput{}, nil
+		},
+	})
+
+	if _, err := Query[widget](context.Background(), db).FilterGreaterOrEqual("Name", "m").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, ">=") {
+		t.Errorf("FilterExpression = %v, want a >= condition", captured.FilterExpression)
+	}
+}
+
+func TestQuery_FilterLessThan(t *testing.T) {
+	var captured *dynamodb.QueryInput
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			captured = in
+			return &dynamodb.QueryOutput{}, nil
+		},
+	})
+
+	if _, err := Query[widget](context.Background(), db).FilterLessThan("Name", "m").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "<") {
+		t.Errorf("FilterExpression = %v, want a < condition", captured.FilterExpression)
+	}
+}
+
+func TestQuery_FilterLessOrEqual(t *testing.T) {
+	var captured *dynamodb.QueryInput
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			captured = in
+			return &dynamodb.QueryOutput{}, nil
+		},
+	})
+
+	if _, err := Query[widget](context.Background(), db).FilterLessOrEqual("Name", "m").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "<=") {
+		t.Errorf("FilterExpression = %v, want a <= condition", captured.FilterExpression)
+	}
+}
+
+func TestQuery_FilterBeginsWith(t *testing.T) {
+	var captured *dynamodb.QueryInput
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			captured = in
+			return &dynamodb.QueryOutput{}, nil
+		},
+	})
+
+	if _, err := Query[widget](context.Background(), db).FilterBeginsWith("Name", "giz").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "begins_with") {
+		t.Errorf("FilterExpression = %v, want a begins_with condition", captured.FilterExpression)
+	}
+	if !valuesContainS(captured.ExpressionAttributeValues, "giz") {
+		t.Errorf("ExpressionAttributeValues = %v, want a value of %q", captured.ExpressionAttributeValues, "giz")
+	}
+}
+
+func TestQuery_FilterContains(t *testing.T) {
+	var captured *dynamodb.QueryInput
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			captured = in
+			return &dynamodb.QueryOutput{}, nil
+		},
+	})
+
+	if _, err := Query[widget](context.Background(), db).FilterContains("Name", "izm").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "contains") {
+		t.Errorf("FilterExpression = %v, want a contains condition", captured.FilterExpression)
+	}
+	if !valuesContainS(captured.ExpressionAttributeValues, "izm") {
+		t.Errorf("ExpressionAttributeValues = %v, want a value of %q", captured.ExpressionAttributeValues, "izm")
+	}
+}
+
+func TestQuery_FilterExists(t *testing.T) {
+	var captured *dynamodb.QueryInput
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			captured = in
+			return &dynamodb.QueryOutput{}, nil
+		},
+	})
+
+	if _, err := Query[widget](context.Background(), db).FilterExists("Name").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "attribute_exists") {
+		t.Errorf("FilterExpression = %v, want an attribute_exists condition", captured.FilterExpression)
+	}
+}
+
+func TestQuery_FilterNotExists(t *testing.T) {
+	var captured *dynamodb.QueryInput
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			captured = in
+			return &dynamodb.QueryOutput{}, nil
+		},
+	})
+
+	if _, err := Query[widget](context.Background(), db).FilterNotExists("Name").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "attribute_not_exists") {
+		t.Errorf("FilterExpression = %v, want an attribute_not_exists condition", captured.FilterExpression)
+	}
+}
+
+func TestQuery_MultiFilter_EqualityAndOperator_ANDed(t *testing.T) {
+	var captured *dynamodb.QueryInput
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			captured = in
+			return &dynamodb.QueryOutput{}, nil
+		},
+	})
+
+	if _, err := Query[widget](context.Background(), db).
+		Filter("Name", "gizmo").
+		FilterGreaterThan("Name", "a").
+		All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.FilterExpression == nil || !containsAnd(*captured.FilterExpression) {
+		t.Errorf("FilterExpression = %v, want an AND of both filters", captured.FilterExpression)
+	}
+}
+
+func TestQuery_Filter_TaggedField_ResolvesToDynamodbavName(t *testing.T) {
+	var captured *dynamodb.QueryInput
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			captured = in
+			return &dynamodb.QueryOutput{}, nil
+		},
+	})
+
+	if _, err := Query[taggedWidget](context.Background(), db).Filter("NickName", "Bob").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if !namesContain(captured.ExpressionAttributeNames, "custom_name") {
+		t.Errorf("ExpressionAttributeNames = %v, want an alias for %q", captured.ExpressionAttributeNames, "custom_name")
+	}
+	if namesContain(captured.ExpressionAttributeNames, "NickName") {
+		t.Errorf("ExpressionAttributeNames = %v, want no alias for the Go field name %q", captured.ExpressionAttributeNames, "NickName")
+	}
+}
+
+func TestQuery_Filter_NoTag_ResolvesToFieldNameUnchanged(t *testing.T) {
+	var captured *dynamodb.QueryInput
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			captured = in
+			return &dynamodb.QueryOutput{}, nil
+		},
+	})
+
+	if _, err := Query[taggedWidget](context.Background(), db).Filter("Name", "gizmo").All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if !namesContain(captured.ExpressionAttributeNames, "Name") {
+		t.Errorf("ExpressionAttributeNames = %v, want an alias for the untagged field name %q", captured.ExpressionAttributeNames, "Name")
+	}
+}
+
+func TestQuery_TypeIndexMode_CustomGSI1PKAttr(t *testing.T) {
+	var captured *dynamodb.QueryInput
+	db := testDBWithOptions(&stubClient{
+		queryFn: func(_ context.Context, in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			captured = in
+			return &dynamodb.QueryOutput{}, nil
+		},
+	}, WithGSI1PKAttr("CustomGSI1PK"))
+
+	if _, err := Query[widget](context.Background(), db).All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if !namesContain(captured.ExpressionAttributeNames, "CustomGSI1PK") {
+		t.Errorf("ExpressionAttributeNames = %v, want an alias for %q", captured.ExpressionAttributeNames, "CustomGSI1PK")
+	}
+	if namesContain(captured.ExpressionAttributeNames, "GSI1PK") {
+		t.Errorf("ExpressionAttributeNames = %v, want no alias for the default %q", captured.ExpressionAttributeNames, "GSI1PK")
 	}
 }
 

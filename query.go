@@ -32,25 +32,79 @@ type skCondition struct {
 	lo, hi string // hi is only used for skBetween
 }
 
-// filterCondition is a single queued equality [QueryBuilder.Filter] (or
-// [ScanBuilder.Filter]) clause.
+// filterOp identifies which comparison operator a queued [filterCondition]
+// uses when [filterExpression] builds it into an
+// expression.ConditionBuilder.
+type filterOp int
+
+const (
+	filterEqual filterOp = iota
+	filterNotEqual
+	filterGreaterThan
+	filterGreaterOrEqual
+	filterLessThan
+	filterLessOrEqual
+	filterBeginsWith
+	filterContains
+	filterExists
+	filterNotExists
+)
+
+// filterCondition is a single queued [QueryBuilder.Filter] (or
+// [ScanBuilder.Filter], or one of their operator-specific siblings —
+// FilterNotEqual, FilterGreaterThan, etc.) clause. value is unused for
+// filterExists/filterNotExists.
 type filterCondition struct {
+	op    filterOp
 	field string
 	value any
 }
 
-// filterExpression ANDs together an equality condition for each filter in
-// filters, in order: filters[0].field = filters[0].value AND filters[1].field
-// = filters[1].value AND ... Shared by [QueryBuilder.buildInput] and
-// [ScanBuilder.buildInput].
+// buildCondition builds the expression.ConditionBuilder for a single
+// filterCondition, dispatching on f.op.
+func (f filterCondition) buildCondition() expression.ConditionBuilder {
+	name := expression.Name(f.field)
+	switch f.op {
+	case filterEqual:
+		return name.Equal(expression.Value(f.value))
+	case filterNotEqual:
+		return name.NotEqual(expression.Value(f.value))
+	case filterGreaterThan:
+		return name.GreaterThan(expression.Value(f.value))
+	case filterGreaterOrEqual:
+		return name.GreaterThanEqual(expression.Value(f.value))
+	case filterLessThan:
+		return name.LessThan(expression.Value(f.value))
+	case filterLessOrEqual:
+		return name.LessThanEqual(expression.Value(f.value))
+	case filterBeginsWith:
+		prefix, _ := f.value.(string)
+		return name.BeginsWith(prefix)
+	case filterContains:
+		return name.Contains(f.value)
+	case filterExists:
+		return name.AttributeExists()
+	case filterNotExists:
+		return name.AttributeNotExists()
+	default:
+		// Unreachable: every filterOp constant is handled above, and
+		// filterCondition values are only ever constructed by this
+		// package's own Filter*/FilterNotEqual/... methods.
+		panic(fmt.Sprintf("godynamo: unknown filterOp %d", f.op))
+	}
+}
+
+// filterExpression ANDs together a condition for each filter in filters, in
+// order: filters[0]'s condition AND filters[1]'s condition AND ... Shared
+// by [QueryBuilder.buildInput] and [ScanBuilder.buildInput].
 //
 // filters must be non-empty — callers are expected to check len(filters) > 0
 // before calling this (a zero-value expression.ConditionBuilder is not a
 // valid filter condition to hand to WithFilter).
 func filterExpression(filters []filterCondition) expression.ConditionBuilder {
-	cond := expression.Name(filters[0].field).Equal(expression.Value(filters[0].value))
+	cond := filters[0].buildCondition()
 	for _, f := range filters[1:] {
-		cond = cond.And(expression.Name(f.field).Equal(expression.Value(f.value)))
+		cond = cond.And(f.buildCondition())
 	}
 	return cond
 }
@@ -59,7 +113,8 @@ func filterExpression(filters []filterCondition) expression.ConditionBuilder {
 // [Query]. It operates in one of two modes:
 //
 //   - Type-index mode (the default): queries the GSI1 index (or whichever
-//     index [QueryBuilder.Index] selects) for GSI1PK = the Go type name of
+//     index [QueryBuilder.Index] selects) for db.gsi1PKAttr (default
+//     "GSI1PK", configurable via [WithGSI1PKAttr]) = the Go type name of
 //     T, i.e. every item of type T in the table.
 //   - Base-table mode: enabled by calling [QueryBuilder.WherePK], queries
 //     the base table for PK = the given partition key.
@@ -67,8 +122,9 @@ func filterExpression(filters []filterCondition) expression.ConditionBuilder {
 // In either mode, [QueryBuilder.SKEquals]/[QueryBuilder.SKBeginsWith]/
 // [QueryBuilder.SKBetween] optionally AND a condition on the "SK" attribute
 // (the base table's sort key, and — in type-index mode — the GSI1 index's
-// reused range key), and [QueryBuilder.Filter] optionally ANDs equality
-// FilterExpression clauses on non-key attributes.
+// reused range key), and [QueryBuilder.Filter] and its operator-specific
+// siblings (FilterNotEqual, FilterGreaterThan, FilterBeginsWith, ...)
+// optionally AND FilterExpression clauses on non-key attributes.
 //
 // No I/O happens until a terminal method ([QueryBuilder.All] or
 // [QueryBuilder.Page]) is called; both reuse the context captured by
@@ -127,10 +183,92 @@ func (b *QueryBuilder[T]) SKBetween(lo, hi string) *QueryBuilder[T] {
 }
 
 // Filter adds an equality FilterExpression condition on a non-key
-// attribute, ANDed with any previous Filter calls. Only equality is
-// supported in this phase; other operators are out of scope.
+// attribute, ANDed with any previous Filter/Filter* calls. It is shorthand
+// for [QueryBuilder.FilterEqual] — the two are identical. field is a Go
+// field name on T (not necessarily its DynamoDB attribute name — a
+// `dynamodbav:"..."` struct tag override, if present, is resolved
+// automatically; see [resolveAttrName]).
 func (b *QueryBuilder[T]) Filter(field string, value any) *QueryBuilder[T] {
-	b.filters = append(b.filters, filterCondition{field: field, value: value})
+	return b.addFilter(filterEqual, field, value)
+}
+
+// FilterEqual adds an "=" FilterExpression condition on a non-key
+// attribute, ANDed with any previous Filter/Filter* calls. Identical to
+// [QueryBuilder.Filter]. See [QueryBuilder.Filter] for the field-name
+// resolution rule.
+func (b *QueryBuilder[T]) FilterEqual(field string, value any) *QueryBuilder[T] {
+	return b.addFilter(filterEqual, field, value)
+}
+
+// FilterNotEqual adds a "<>" FilterExpression condition on a non-key
+// attribute, ANDed with any previous Filter/Filter* calls. See
+// [QueryBuilder.Filter] for the field-name resolution rule.
+func (b *QueryBuilder[T]) FilterNotEqual(field string, value any) *QueryBuilder[T] {
+	return b.addFilter(filterNotEqual, field, value)
+}
+
+// FilterGreaterThan adds a ">" FilterExpression condition on a non-key
+// attribute, ANDed with any previous Filter/Filter* calls. See
+// [QueryBuilder.Filter] for the field-name resolution rule.
+func (b *QueryBuilder[T]) FilterGreaterThan(field string, value any) *QueryBuilder[T] {
+	return b.addFilter(filterGreaterThan, field, value)
+}
+
+// FilterGreaterOrEqual adds a ">=" FilterExpression condition on a non-key
+// attribute, ANDed with any previous Filter/Filter* calls. See
+// [QueryBuilder.Filter] for the field-name resolution rule.
+func (b *QueryBuilder[T]) FilterGreaterOrEqual(field string, value any) *QueryBuilder[T] {
+	return b.addFilter(filterGreaterOrEqual, field, value)
+}
+
+// FilterLessThan adds a "<" FilterExpression condition on a non-key
+// attribute, ANDed with any previous Filter/Filter* calls. See
+// [QueryBuilder.Filter] for the field-name resolution rule.
+func (b *QueryBuilder[T]) FilterLessThan(field string, value any) *QueryBuilder[T] {
+	return b.addFilter(filterLessThan, field, value)
+}
+
+// FilterLessOrEqual adds a "<=" FilterExpression condition on a non-key
+// attribute, ANDed with any previous Filter/Filter* calls. See
+// [QueryBuilder.Filter] for the field-name resolution rule.
+func (b *QueryBuilder[T]) FilterLessOrEqual(field string, value any) *QueryBuilder[T] {
+	return b.addFilter(filterLessOrEqual, field, value)
+}
+
+// FilterBeginsWith adds a begins_with(field, prefix) FilterExpression
+// condition on a non-key attribute, ANDed with any previous Filter/Filter*
+// calls. See [QueryBuilder.Filter] for the field-name resolution rule.
+func (b *QueryBuilder[T]) FilterBeginsWith(field, prefix string) *QueryBuilder[T] {
+	return b.addFilter(filterBeginsWith, field, prefix)
+}
+
+// FilterContains adds a contains(field, value) FilterExpression condition
+// on a non-key attribute, ANDed with any previous Filter/Filter* calls. See
+// [QueryBuilder.Filter] for the field-name resolution rule.
+func (b *QueryBuilder[T]) FilterContains(field string, value any) *QueryBuilder[T] {
+	return b.addFilter(filterContains, field, value)
+}
+
+// FilterExists adds an attribute_exists(field) FilterExpression condition
+// on a non-key attribute, ANDed with any previous Filter/Filter* calls. See
+// [QueryBuilder.Filter] for the field-name resolution rule.
+func (b *QueryBuilder[T]) FilterExists(field string) *QueryBuilder[T] {
+	return b.addFilter(filterExists, field, nil)
+}
+
+// FilterNotExists adds an attribute_not_exists(field) FilterExpression
+// condition on a non-key attribute, ANDed with any previous Filter/Filter*
+// calls. See [QueryBuilder.Filter] for the field-name resolution rule.
+func (b *QueryBuilder[T]) FilterNotExists(field string) *QueryBuilder[T] {
+	return b.addFilter(filterNotExists, field, nil)
+}
+
+// addFilter resolves field (a Go field name on T) to its DynamoDB
+// attribute name and queues a filterCondition for it. Shared by
+// [QueryBuilder.Filter] and all its operator-specific siblings.
+func (b *QueryBuilder[T]) addFilter(op filterOp, field string, value any) *QueryBuilder[T] {
+	attr := resolveAttrName(reflect.TypeFor[T](), field)
+	b.filters = append(b.filters, filterCondition{op: op, field: attr, value: value})
 	return b
 }
 
@@ -169,7 +307,7 @@ func (b *QueryBuilder[T]) buildInput() (*dynamodb.QueryInput, error) {
 			idx = b.index
 		}
 		indexName = aws.String(idx)
-		keyCond = expression.Key("GSI1PK").Equal(expression.Value(typeName))
+		keyCond = expression.Key(b.db.gsi1PKAttr).Equal(expression.Value(typeName))
 	}
 
 	switch b.sk.kind {

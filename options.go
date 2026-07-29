@@ -17,6 +17,16 @@ func WithGSI1Name(name string) Option {
 	}
 }
 
+// WithGSI1PKAttr overrides the default attribute name for GSI1's partition
+// key ("GSI1PK"). [Put] writes this attribute on new items, and
+// [QueryBuilder]'s type-index mode reads it as the key condition's
+// partition-key attribute; both use the same configured name.
+func WithGSI1PKAttr(name string) Option {
+	return func(db *DB) {
+		db.gsi1PKAttr = name
+	}
+}
+
 // WithClock overrides the function used to obtain the current time when
 // stamping CreatedAt/UpdatedAt. Defaults to time.Now. Primarily useful for
 // tests that need deterministic timestamps.

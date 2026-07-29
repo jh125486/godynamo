@@ -12,6 +12,11 @@ import (
 // via [WithGSI1Name]).
 const defaultGSI1Name = "GSI1"
 
+// defaultGSI1PKAttr is the default attribute name for GSI1's partition key,
+// carried in DB config and written by [Put] / read by [Query]'s type-index
+// mode (overridable via [WithGSI1PKAttr]).
+const defaultGSI1PKAttr = "GSI1PK"
+
 // dynamoAPI is the narrow subset of *dynamodb.Client this package needs. It
 // exists so tests can substitute a hand-written stub instead of talking to
 // real AWS/DynamoDB Local. Its size tracks the number of distinct DynamoDB
@@ -46,27 +51,30 @@ type dynamoAPI interface {
 }
 
 // DB wraps a DynamoDB client plus the single-table-design config (table
-// name, GSI1 index name) and the clock/actor hooks used to populate audit
-// fields on writes.
+// name, GSI1 index name, GSI1 partition-key attribute name) and the
+// clock/actor hooks used to populate audit fields on writes.
 type DB struct {
-	client   dynamoAPI
-	table    string
-	gsi1Name string
-	clock    func() time.Time
-	actor    func(ctx context.Context) string
+	client     dynamoAPI
+	table      string
+	gsi1Name   string
+	gsi1PKAttr string
+	clock      func() time.Time
+	actor      func(ctx context.Context) string
 }
 
 // New constructs a DB backed by a real *dynamodb.Client. table is the
 // DynamoDB table name used for all CRUD operations. Options may override
-// the GSI1 index name, clock, and actor-provider defaults; see
-// [WithGSI1Name], [WithClock], and [WithActor].
+// the GSI1 index name, GSI1 partition-key attribute name, clock, and
+// actor-provider defaults; see [WithGSI1Name], [WithGSI1PKAttr],
+// [WithClock], and [WithActor].
 func New(client *dynamodb.Client, table string, opts ...Option) *DB {
 	db := &DB{
-		client:   client,
-		table:    table,
-		gsi1Name: defaultGSI1Name,
-		clock:    time.Now,
-		actor:    func(context.Context) string { return "" },
+		client:     client,
+		table:      table,
+		gsi1Name:   defaultGSI1Name,
+		gsi1PKAttr: defaultGSI1PKAttr,
+		clock:      time.Now,
+		actor:      func(context.Context) string { return "" },
 	}
 	for _, opt := range opts {
 		opt(db)

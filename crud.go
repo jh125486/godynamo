@@ -108,8 +108,9 @@ func asOptimisticLockErr(err error, action, typeName string, id uuid.UUID) error
 // item's PK/SK are computed via [PK]/[SK] (after Type and the audit fields
 // are set, since key templates may reference sibling fields including
 // Type) and written under the literal attribute names "PK"/"SK". On the
-// new-item path, a "GSI1PK" attribute is also set to item's Type (the same
-// struct-name string [SetType] stamps).
+// new-item path, a db.gsi1PKAttr attribute (default "GSI1PK", configurable
+// via [WithGSI1PKAttr]) is also set to item's Type (the same struct-name
+// string [SetType] stamps).
 //
 // The returned cond is always populated, but it is only meaningful to
 // callers whose underlying DynamoDB API supports a per-item
@@ -157,7 +158,7 @@ func stampAndMarshal(
 	av["PK"] = &types.AttributeValueMemberS{Value: pk}
 	av["SK"] = &types.AttributeValueMemberS{Value: sk}
 	if newItem {
-		av["GSI1PK"] = &types.AttributeValueMemberS{Value: typeName}
+		av[db.gsi1PKAttr] = &types.AttributeValueMemberS{Value: typeName}
 	}
 
 	return av, cond, nil
@@ -183,16 +184,18 @@ func stampAndMarshal(
 // are set, since key templates may reference sibling fields including
 // Type) and written under the literal attribute names "PK"/"SK".
 //
-// On the new-item path, Put also writes a "GSI1PK" attribute set to the
+// On the new-item path, Put also writes a GSI1 partition-key attribute
+// (default name "GSI1PK", configurable via [WithGSI1PKAttr]) set to the
 // item's Type (the same struct-name string [SetType] stamps). Type is
 // immutable once set — Update never changes it — so re-Puts of existing
-// items don't need to touch GSI1PK again.
+// items don't need to touch that attribute again.
 //
 // For type-index queries ([Query] with no [QueryBuilder.WherePK] call) to
 // work, the DynamoDB table must have a GSI (default name "GSI1",
-// configurable via [WithGSI1Name]) with partition key GSI1PK (String) and
-// sort key SK (String) — the GSI reuses the base table's SK attribute as
-// its own range key, which is valid: a GSI's key schema may reference an
+// configurable via [WithGSI1Name]) with partition key db.gsi1PKAttr
+// (default "GSI1PK", configurable via [WithGSI1PKAttr]; String) and sort
+// key SK (String) — the GSI reuses the base table's SK attribute as its
+// own range key, which is valid: a GSI's key schema may reference an
 // attribute the base table already writes. Creating the table/index is out
 // of scope for this package.
 func Put[T any](ctx context.Context, db *DB, item *T) error {
@@ -310,15 +313,23 @@ func Update[T any](db *DB, id uuid.UUID) *UpdateBuilder[T] {
 	return &UpdateBuilder[T]{db: db, id: id}
 }
 
-// Set queues a "SET field = value" action.
+// Set queues a "SET field = value" action. field is a Go field name on T
+// (not necessarily its DynamoDB attribute name — a `dynamodbav:"..."`
+// struct tag override, if present, is resolved automatically; see
+// [resolveAttrName]).
 func (b *UpdateBuilder[T]) Set(field string, value any) *UpdateBuilder[T] {
-	b.ops = append(b.ops, updateOp{name: field, val: value})
+	attr := resolveAttrName(reflect.TypeFor[T](), field)
+	b.ops = append(b.ops, updateOp{name: attr, val: value})
 	return b
 }
 
-// Add queues a numeric "ADD field delta" action.
+// Add queues a numeric "ADD field delta" action. field is a Go field name
+// on T (not necessarily its DynamoDB attribute name — a
+// `dynamodbav:"..."` struct tag override, if present, is resolved
+// automatically; see [resolveAttrName]).
 func (b *UpdateBuilder[T]) Add(field string, delta any) *UpdateBuilder[T] {
-	b.ops = append(b.ops, updateOp{name: field, val: delta, add: true})
+	attr := resolveAttrName(reflect.TypeFor[T](), field)
+	b.ops = append(b.ops, updateOp{name: attr, val: delta, add: true})
 	return b
 }
 

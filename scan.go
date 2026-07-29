@@ -19,10 +19,11 @@ import (
 // IndexName is ever set on the built ScanInput, so scanning a GSI is out of
 // scope for this phase.
 //
-// [ScanBuilder.Filter] optionally ANDs equality FilterExpression clauses on
-// non-key attributes, using the same equality-only semantics as
-// [QueryBuilder.Filter]. [ScanBuilder.Parallel] optionally enables a
-// parallel scan across multiple DynamoDB scan segments.
+// [ScanBuilder.Filter] and its operator-specific siblings (FilterNotEqual,
+// FilterGreaterThan, FilterBeginsWith, ...) optionally AND FilterExpression
+// clauses on non-key attributes, using the same semantics as
+// [QueryBuilder.Filter] and friends. [ScanBuilder.Parallel] optionally
+// enables a parallel scan across multiple DynamoDB scan segments.
 //
 // No I/O happens until the terminal method ([ScanBuilder.All]) is called; it
 // reuses the context captured by [Scan] rather than requiring it again.
@@ -48,11 +49,90 @@ func Scan[T any](ctx context.Context, db *DB) *ScanBuilder[T] {
 }
 
 // Filter adds an equality FilterExpression condition on a non-key
-// attribute, ANDed with any previous Filter calls. Only equality is
-// supported in this phase; other operators are out of scope. Same
-// semantics as [QueryBuilder.Filter].
+// attribute, ANDed with any previous Filter/Filter* calls. It is shorthand
+// for [ScanBuilder.FilterEqual] — the two are identical. Same semantics as
+// [QueryBuilder.Filter], including field-name resolution (see
+// [resolveAttrName]).
 func (b *ScanBuilder[T]) Filter(field string, value any) *ScanBuilder[T] {
-	b.filters = append(b.filters, filterCondition{field: field, value: value})
+	return b.addFilter(filterEqual, field, value)
+}
+
+// FilterEqual adds an "=" FilterExpression condition on a non-key
+// attribute, ANDed with any previous Filter/Filter* calls. Identical to
+// [ScanBuilder.Filter]. Same semantics as [QueryBuilder.FilterEqual].
+func (b *ScanBuilder[T]) FilterEqual(field string, value any) *ScanBuilder[T] {
+	return b.addFilter(filterEqual, field, value)
+}
+
+// FilterNotEqual adds a "<>" FilterExpression condition on a non-key
+// attribute, ANDed with any previous Filter/Filter* calls. Same semantics
+// as [QueryBuilder.FilterNotEqual].
+func (b *ScanBuilder[T]) FilterNotEqual(field string, value any) *ScanBuilder[T] {
+	return b.addFilter(filterNotEqual, field, value)
+}
+
+// FilterGreaterThan adds a ">" FilterExpression condition on a non-key
+// attribute, ANDed with any previous Filter/Filter* calls. Same semantics
+// as [QueryBuilder.FilterGreaterThan].
+func (b *ScanBuilder[T]) FilterGreaterThan(field string, value any) *ScanBuilder[T] {
+	return b.addFilter(filterGreaterThan, field, value)
+}
+
+// FilterGreaterOrEqual adds a ">=" FilterExpression condition on a non-key
+// attribute, ANDed with any previous Filter/Filter* calls. Same semantics
+// as [QueryBuilder.FilterGreaterOrEqual].
+func (b *ScanBuilder[T]) FilterGreaterOrEqual(field string, value any) *ScanBuilder[T] {
+	return b.addFilter(filterGreaterOrEqual, field, value)
+}
+
+// FilterLessThan adds a "<" FilterExpression condition on a non-key
+// attribute, ANDed with any previous Filter/Filter* calls. Same semantics
+// as [QueryBuilder.FilterLessThan].
+func (b *ScanBuilder[T]) FilterLessThan(field string, value any) *ScanBuilder[T] {
+	return b.addFilter(filterLessThan, field, value)
+}
+
+// FilterLessOrEqual adds a "<=" FilterExpression condition on a non-key
+// attribute, ANDed with any previous Filter/Filter* calls. Same semantics
+// as [QueryBuilder.FilterLessOrEqual].
+func (b *ScanBuilder[T]) FilterLessOrEqual(field string, value any) *ScanBuilder[T] {
+	return b.addFilter(filterLessOrEqual, field, value)
+}
+
+// FilterBeginsWith adds a begins_with(field, prefix) FilterExpression
+// condition on a non-key attribute, ANDed with any previous Filter/Filter*
+// calls. Same semantics as [QueryBuilder.FilterBeginsWith].
+func (b *ScanBuilder[T]) FilterBeginsWith(field, prefix string) *ScanBuilder[T] {
+	return b.addFilter(filterBeginsWith, field, prefix)
+}
+
+// FilterContains adds a contains(field, value) FilterExpression condition
+// on a non-key attribute, ANDed with any previous Filter/Filter* calls.
+// Same semantics as [QueryBuilder.FilterContains].
+func (b *ScanBuilder[T]) FilterContains(field string, value any) *ScanBuilder[T] {
+	return b.addFilter(filterContains, field, value)
+}
+
+// FilterExists adds an attribute_exists(field) FilterExpression condition
+// on a non-key attribute, ANDed with any previous Filter/Filter* calls.
+// Same semantics as [QueryBuilder.FilterExists].
+func (b *ScanBuilder[T]) FilterExists(field string) *ScanBuilder[T] {
+	return b.addFilter(filterExists, field, nil)
+}
+
+// FilterNotExists adds an attribute_not_exists(field) FilterExpression
+// condition on a non-key attribute, ANDed with any previous Filter/Filter*
+// calls. Same semantics as [QueryBuilder.FilterNotExists].
+func (b *ScanBuilder[T]) FilterNotExists(field string) *ScanBuilder[T] {
+	return b.addFilter(filterNotExists, field, nil)
+}
+
+// addFilter resolves field (a Go field name on T) to its DynamoDB
+// attribute name and queues a filterCondition for it. Shared by
+// [ScanBuilder.Filter] and all its operator-specific siblings.
+func (b *ScanBuilder[T]) addFilter(op filterOp, field string, value any) *ScanBuilder[T] {
+	attr := resolveAttrName(reflect.TypeFor[T](), field)
+	b.filters = append(b.filters, filterCondition{op: op, field: attr, value: value})
 	return b
 }
 

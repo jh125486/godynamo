@@ -18,6 +18,15 @@ type widget struct {
 	Name string
 }
 
+// taggedWidget carries a dynamodbav struct tag override on NickName (and a
+// plain, untagged Name field), to exercise resolveAttrName's tagged and
+// untagged paths through Filter/Set/Add.
+type taggedWidget struct {
+	Model
+	Name     string
+	NickName string `dynamodbav:"custom_name"`
+}
+
 // badMarshalField always fails to marshal (regardless of its value), by
 // implementing attributevalue.Marshaler with a hard-coded error. Used to
 // exercise stampAndMarshal's attributevalue.MarshalMap error path, which is
@@ -130,12 +139,24 @@ var fixedNow = time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
 
 func testDB(client dynamoAPI) *DB {
 	return &DB{
-		client:   client,
-		table:    "test-table",
-		gsi1Name: defaultGSI1Name,
-		clock:    func() time.Time { return fixedNow },
-		actor:    func(context.Context) string { return "tester" },
+		client:     client,
+		table:      "test-table",
+		gsi1Name:   defaultGSI1Name,
+		gsi1PKAttr: defaultGSI1PKAttr,
+		clock:      func() time.Time { return fixedNow },
+		actor:      func(context.Context) string { return "tester" },
 	}
+}
+
+// testDBWithOptions is [testDB] plus a set of [Option]s applied afterward,
+// for tests that need to override e.g. gsi1PKAttr on top of the usual
+// fixed-clock/tester-actor test defaults.
+func testDBWithOptions(client dynamoAPI, opts ...Option) *DB {
+	db := testDB(client)
+	for _, opt := range opts {
+		opt(db)
+	}
+	return db
 }
 
 // attrS/attrN extract the string/number value of an attribute for
@@ -669,6 +690,105 @@ func TestUpdate_NonDefaultKey_ReturnsErrNonDefaultKey(t *testing.T) {
 		Run(context.Background())
 	if !errors.Is(err, ErrNonDefaultKey) {
 		t.Fatalf("error = %v, want wrapping ErrNonDefaultKey", err)
+	}
+}
+
+func TestPut_NewItem_CustomGSI1PKAttr(t *testing.T) {
+	id := uuid.New()
+	item := &widget{Model: Model{ID: id}, Name: "gizmo"}
+
+	var captured *dynamodb.PutItemInput
+	db := testDBWithOptions(&stubClient{
+		putFn: func(_ context.Context, in *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) {
+			captured = in
+			return &dynamodb.PutItemOutput{}, nil
+		},
+	}, WithGSI1PKAttr("CustomGSI1PK"))
+
+	if err := Put(context.Background(), db, item); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+
+	if _, ok := captured.Item["GSI1PK"]; ok {
+		t.Errorf("Item[GSI1PK] = %v, want absent when WithGSI1PKAttr overrides the attribute name", captured.Item["GSI1PK"])
+	}
+	if got := attrS(t, captured.Item, "CustomGSI1PK"); got != "widget" {
+		t.Errorf("Item[CustomGSI1PK] = %q, want %q", got, "widget")
+	}
+}
+
+func TestUpdate_Set_TaggedField_ResolvesToDynamodbavName(t *testing.T) {
+	id := uuid.New()
+	var captured *dynamodb.UpdateItemInput
+	db := testDB(&stubClient{
+		updateFn: func(_ context.Context, in *dynamodb.UpdateItemInput) (*dynamodb.UpdateItemOutput, error) {
+			captured = in
+			out, _ := attributevalue.MarshalMap(taggedWidget{Model: Model{ID: id}})
+			return &dynamodb.UpdateItemOutput{Attributes: out}, nil
+		},
+	})
+
+	_, err := Update[taggedWidget](db, id).
+		Set("NickName", "Bob").
+		Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if !namesContain(captured.ExpressionAttributeNames, "custom_name") {
+		t.Errorf("ExpressionAttributeNames = %v, want an alias for %q", captured.ExpressionAttributeNames, "custom_name")
+	}
+	if namesContain(captured.ExpressionAttributeNames, "NickName") {
+		t.Errorf("ExpressionAttributeNames = %v, want no alias for the Go field name %q", captured.ExpressionAttributeNames, "NickName")
+	}
+}
+
+func TestUpdate_Set_NoTag_ResolvesToFieldNameUnchanged(t *testing.T) {
+	id := uuid.New()
+	var captured *dynamodb.UpdateItemInput
+	db := testDB(&stubClient{
+		updateFn: func(_ context.Context, in *dynamodb.UpdateItemInput) (*dynamodb.UpdateItemOutput, error) {
+			captured = in
+			out, _ := attributevalue.MarshalMap(taggedWidget{Model: Model{ID: id}})
+			return &dynamodb.UpdateItemOutput{Attributes: out}, nil
+		},
+	})
+
+	_, err := Update[taggedWidget](db, id).
+		Set("Name", "Bob").
+		Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if !namesContain(captured.ExpressionAttributeNames, "Name") {
+		t.Errorf("ExpressionAttributeNames = %v, want an alias for the untagged field name %q", captured.ExpressionAttributeNames, "Name")
+	}
+}
+
+func TestUpdate_Add_TaggedField_ResolvesToDynamodbavName(t *testing.T) {
+	id := uuid.New()
+	var captured *dynamodb.UpdateItemInput
+	db := testDB(&stubClient{
+		updateFn: func(_ context.Context, in *dynamodb.UpdateItemInput) (*dynamodb.UpdateItemOutput, error) {
+			captured = in
+			out, _ := attributevalue.MarshalMap(taggedWidget{Model: Model{ID: id}})
+			return &dynamodb.UpdateItemOutput{Attributes: out}, nil
+		},
+	})
+
+	// NickName isn't numeric, but Add only builds an UpdateExpression --
+	// nothing here actually evaluates the delta against a real item, so this
+	// is safe purely to exercise field-name resolution.
+	_, err := Update[taggedWidget](db, id).
+		Add("NickName", 1).
+		Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if !namesContain(captured.ExpressionAttributeNames, "custom_name") {
+		t.Errorf("ExpressionAttributeNames = %v, want an alias for %q", captured.ExpressionAttributeNames, "custom_name")
 	}
 }
 
