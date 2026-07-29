@@ -1,0 +1,29 @@
+# To get started with Dependabot version updates, you'll need to specify which
+# package ecosystems to update and where the package manifests are located.
+# Please see the documentation for all configuration options:
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# NOTE: this repo also has a tools.mod (Go 1.24+ `tool` directive pinning file for
+# golangci-lint/govulncheck/modernize/gotestsum). Dependabot's `gomod` ecosystem only
+# looks for a file literally named `go.mod` in `directory` and has no supported way to
+# point at a differently-named go.mod-style file, so tools.mod is NOT covered here and
+# will not receive automatic update PRs. Run `make update-tools` periodically instead.
+
+version: 2
+updates:
+  - package-ecosystem: "gomod" # See documentation for possible values
+    directory: "/" # Location of package manifests
+    schedule:
+      interval: "daily"
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
+  - package-ecosystem: "github-actions" # See documentation for possible values
+    directory: "/" # Location of package manifests
+    schedule:
+      interval: "daily"
+    groups:
+      all-dependencies:
+        patterns:
+          - "*"
