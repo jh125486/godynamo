@@ -181,3 +181,38 @@ func TestPK_PanicsWithoutModel(t *testing.T) {
 	}()
 	godynamo.PK(&NoModel{Name: "x"})
 }
+
+func TestPK_PanicsOnNilPointer(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for nil pointer")
+		}
+	}()
+	var v *NoTags
+	godynamo.PK(v)
+}
+
+func TestPK_PanicsOnNonStruct(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for a non-struct value")
+		}
+	}()
+	godynamo.PK(42)
+}
+
+// FieldMismatch has a pk clause referencing a field name that doesn't exist
+// on the struct, to exercise buildKey's "field not found" panic.
+type FieldMismatch struct {
+	godynamo.Model `dynamo:"pk:DoesNotExist"`
+	Tenant         string
+}
+
+func TestPK_PanicsOnMissingField(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for a pk clause referencing a nonexistent field")
+		}
+	}()
+	godynamo.PK(&FieldMismatch{Tenant: "acme"})
+}

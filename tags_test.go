@@ -69,6 +69,28 @@ func TestParseTags_PanicsWithoutModel(t *testing.T) {
 	parseTags(reflect.TypeOf(noModel{}))
 }
 
+// internalMalformedClauses has a tag with an empty clause (from the
+// trailing ";") and a clause with no "key:value" separator ("garbage"),
+// both of which parseTags must silently skip.
+type internalMalformedClauses struct {
+	Model      `dynamo:"pk:CustomerID;;garbage;sk:Status"`
+	CustomerID string
+	Status     string
+}
+
+func TestParseTags_SkipsEmptyAndMalformedClauses(t *testing.T) {
+	mt := parseTags(reflect.TypeOf(internalMalformedClauses{}))
+
+	wantPK := []string{"CustomerID"}
+	wantSK := []string{"Status"}
+	if !reflect.DeepEqual(mt.pkFields, wantPK) {
+		t.Fatalf("pkFields = %v, want %v", mt.pkFields, wantPK)
+	}
+	if !reflect.DeepEqual(mt.skFields, wantSK) {
+		t.Fatalf("skFields = %v, want %v", mt.skFields, wantSK)
+	}
+}
+
 func TestSplitFields(t *testing.T) {
 	got := splitFields(" A , B ,C")
 	want := []string{"A", "B", "C"}

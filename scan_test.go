@@ -117,6 +117,42 @@ func TestScan_Limit(t *testing.T) {
 	}
 }
 
+func TestScan_Filter_EmptyFieldName_BuildError(t *testing.T) {
+	var called bool
+	db := testDB(&stubClient{
+		scanFn: func(_ context.Context, _ *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
+			called = true
+			return &dynamodb.ScanOutput{}, nil
+		},
+	})
+
+	_, err := Scan[widget](context.Background(), db).Filter("", "x").All()
+	if err == nil {
+		t.Fatal("expected error building scan expression with an empty filter field name, got nil")
+	}
+	if called {
+		t.Error("Scan was called, want no call when building the expression fails")
+	}
+}
+
+func TestScan_UnmarshalError(t *testing.T) {
+	src := badUnmarshalItem{Model: Model{ID: uuid.New(), Type: "badUnmarshalItem", CreatedAt: fixedNow, Version: 1}}
+	av, err := attributevalue.MarshalMap(src)
+	if err != nil {
+		t.Fatalf("MarshalMap() error = %v", err)
+	}
+
+	db := testDB(&stubClient{
+		scanFn: func(_ context.Context, _ *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
+			return &dynamodb.ScanOutput{Items: []map[string]types.AttributeValue{av}}, nil
+		},
+	})
+
+	if _, err := Scan[badUnmarshalItem](context.Background(), db).All(); err == nil {
+		t.Fatal("expected unmarshal error, got nil")
+	}
+}
+
 func TestScan_All_Pagination(t *testing.T) {
 	item1 := widget{Model: Model{ID: uuid.New(), Type: "widget"}, Name: "one"}
 	item2 := widget{Model: Model{ID: uuid.New(), Type: "widget"}, Name: "two"}

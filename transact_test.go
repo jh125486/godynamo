@@ -100,6 +100,76 @@ func TestTransactGet_MissingItemLeavesDstUntouched(t *testing.T) {
 	}
 }
 
+func TestTransactGet_Empty_NoOp(t *testing.T) {
+	var called bool
+	db := testDB(&stubClient{
+		transactGetItemsFn: func(_ context.Context, _ *dynamodb.TransactGetItemsInput) (*dynamodb.TransactGetItemsOutput, error) {
+			called = true
+			return &dynamodb.TransactGetItemsOutput{}, nil
+		},
+	})
+
+	if err := TransactGet(context.Background(), db).Run(); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if called {
+		t.Error("TransactGetItems was called, want no call when nothing was queued")
+	}
+}
+
+func TestTransactGet_ClientError(t *testing.T) {
+	db := testDB(&stubClient{
+		transactGetItemsFn: func(_ context.Context, _ *dynamodb.TransactGetItemsInput) (*dynamodb.TransactGetItemsOutput, error) {
+			return nil, errors.New("aws: throttled")
+		},
+	})
+
+	dst := &widget{Model: Model{ID: uuid.New()}}
+	if err := TransactGet(context.Background(), db).Get(dst).Run(); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestTransactGet_FewerResponsesThanQueued(t *testing.T) {
+	// A malformed/short Responses slice (fewer entries than TransactItems
+	// queued) must not panic -- Run should just stop filling in dsts.
+	db := testDB(&stubClient{
+		transactGetItemsFn: func(_ context.Context, _ *dynamodb.TransactGetItemsInput) (*dynamodb.TransactGetItemsOutput, error) {
+			return &dynamodb.TransactGetItemsOutput{Responses: []types.ItemResponse{}}, nil
+		},
+	})
+
+	dst1 := &widget{Model: Model{ID: uuid.New()}, Name: "untouched1"}
+	dst2 := &widget{Model: Model{ID: uuid.New()}, Name: "untouched2"}
+	if err := TransactGet(context.Background(), db).Get(dst1).Get(dst2).Run(); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if dst1.Name != "untouched1" || dst2.Name != "untouched2" {
+		t.Errorf("dst1=%+v dst2=%+v, want both left untouched", dst1, dst2)
+	}
+}
+
+func TestTransactGet_UnmarshalError(t *testing.T) {
+	src := badUnmarshalItem{Model: Model{ID: uuid.New(), Type: "badUnmarshalItem", CreatedAt: fixedNow, Version: 1}}
+	av, err := attributevalue.MarshalMap(src)
+	if err != nil {
+		t.Fatalf("MarshalMap() error = %v", err)
+	}
+
+	db := testDB(&stubClient{
+		transactGetItemsFn: func(_ context.Context, _ *dynamodb.TransactGetItemsInput) (*dynamodb.TransactGetItemsOutput, error) {
+			return &dynamodb.TransactGetItemsOutput{
+				Responses: []types.ItemResponse{{Item: av}},
+			}, nil
+		},
+	})
+
+	dst := &badUnmarshalItem{Model: Model{ID: uuid.New()}}
+	if err := TransactGet(context.Background(), db).Get(dst).Run(); err == nil {
+		t.Fatal("expected unmarshal error, got nil")
+	}
+}
+
 func TestTransactGet_TooManyItems_NoAPICall(t *testing.T) {
 	var called bool
 	db := testDB(&stubClient{
@@ -341,5 +411,103 @@ func TestTransactWrite_TooManyItems_NoAPICall(t *testing.T) {
 	}
 	if called {
 		t.Error("TransactWriteItems was called, want no call when over the limit")
+	}
+}
+
+func TestTransactWrite_Put_MarshalError_SkipsSubsequentCalls(t *testing.T) {
+	bad := &badMarshalItem{Model: Model{ID: uuid.New()}}
+	good := &widget{Model: Model{ID: uuid.New()}, Name: "gizmo"}
+
+	var called bool
+	db := testDB(&stubClient{
+		transactWriteItemsFn: func(_ context.Context, _ *dynamodb.TransactWriteItemsInput) (*dynamodb.TransactWriteItemsOutput, error) {
+			called = true
+			return &dynamodb.TransactWriteItemsOutput{}, nil
+		},
+	})
+
+	// The first Put records a marshal error; the second Put call must
+	// short-circuit ("if b.err != nil { return b }") rather than attempt to
+	// stamp/marshal good.
+	err := TransactWrite(context.Background(), db).Put(bad).Put(good).Run()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if called {
+		t.Error("TransactWriteItems was called, want no call once Put has recorded an error")
+	}
+}
+
+func TestTransactWrite_ConditionCheck_SkipsWhenErrAlreadySet(t *testing.T) {
+	bad := &badMarshalItem{Model: Model{ID: uuid.New()}}
+	keyItem := &widget{Model: Model{ID: uuid.New()}}
+
+	var called bool
+	db := testDB(&stubClient{
+		transactWriteItemsFn: func(_ context.Context, _ *dynamodb.TransactWriteItemsInput) (*dynamodb.TransactWriteItemsOutput, error) {
+			called = true
+			return &dynamodb.TransactWriteItemsOutput{}, nil
+		},
+	})
+
+	// Put records an error first; ConditionCheck must short-circuit
+	// ("if b.err != nil { return b }") rather than queue another entry.
+	err := TransactWrite(context.Background(), db).Put(bad).ConditionCheck(keyItem, 1).Run()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if called {
+		t.Error("TransactWriteItems was called, want no call once Put has recorded an error")
+	}
+}
+
+func TestTransactWrite_Empty_NoOp(t *testing.T) {
+	var called bool
+	db := testDB(&stubClient{
+		transactWriteItemsFn: func(_ context.Context, _ *dynamodb.TransactWriteItemsInput) (*dynamodb.TransactWriteItemsOutput, error) {
+			called = true
+			return &dynamodb.TransactWriteItemsOutput{}, nil
+		},
+	})
+
+	if err := TransactWrite(context.Background(), db).Run(); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if called {
+		t.Error("TransactWriteItems was called, want no call when nothing was queued")
+	}
+}
+
+func TestTransactWrite_GenericError_NotTransactionCanceled(t *testing.T) {
+	item := &widget{Model: Model{ID: uuid.New()}, Name: "gizmo"}
+	db := testDB(&stubClient{
+		transactWriteItemsFn: func(_ context.Context, _ *dynamodb.TransactWriteItemsInput) (*dynamodb.TransactWriteItemsOutput, error) {
+			return nil, errors.New("aws: internal server error")
+		},
+	})
+
+	err := TransactWrite(context.Background(), db).Put(item).Run()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if errors.Is(err, ErrOptimisticLock) {
+		t.Errorf("error = %v, should NOT wrap ErrOptimisticLock for a non-TransactionCanceledException error", err)
+	}
+}
+
+func TestCancellationReasonCodes_NilCode_MapsToNone(t *testing.T) {
+	code := "ConditionalCheckFailed"
+	codes := cancellationReasonCodes([]types.CancellationReason{
+		{Code: nil},
+		{Code: &code},
+	})
+	if len(codes) != 2 {
+		t.Fatalf("codes = %v, want 2 entries", codes)
+	}
+	if codes[0] != "None" {
+		t.Errorf("codes[0] = %q, want %q for a nil Code", codes[0], "None")
+	}
+	if codes[1] != code {
+		t.Errorf("codes[1] = %q, want %q", codes[1], code)
 	}
 }

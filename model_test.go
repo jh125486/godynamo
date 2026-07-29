@@ -42,3 +42,13 @@ func TestSetType_PanicsWithoutModel(t *testing.T) {
 	}()
 	godynamo.SetType(&NoModel{})
 }
+
+func TestSetType_PanicsOnPointerToNonStruct(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for a pointer to a non-struct value")
+		}
+	}()
+	var x int
+	godynamo.SetType(&x)
+}

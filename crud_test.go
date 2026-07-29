@@ -18,6 +18,52 @@ type widget struct {
 	Name string
 }
 
+// badMarshalField always fails to marshal (regardless of its value), by
+// implementing attributevalue.Marshaler with a hard-coded error. Used to
+// exercise stampAndMarshal's attributevalue.MarshalMap error path, which is
+// otherwise very hard to reach with an ordinary Go value.
+type badMarshalField struct{}
+
+func (badMarshalField) MarshalDynamoDBAttributeValue() (types.AttributeValue, error) {
+	return nil, errors.New("boom: marshal failure")
+}
+
+// badMarshalItem is a widget-like fixture whose Bad field always fails to
+// marshal, used to exercise stampAndMarshal's MarshalMap error path from
+// [Put], [BatchWriteBuilder.Put], and [TransactWriteBuilder.Put].
+type badMarshalItem struct {
+	Model
+	Bad badMarshalField
+}
+
+// badUnmarshalField always fails to unmarshal (regardless of the
+// AttributeValue given), by implementing attributevalue.Unmarshaler with a
+// hard-coded error. Used to exercise attributevalue.UnmarshalMap error paths
+// in Get/BatchGet/Query/Scan/TransactGet/Update, which are otherwise very
+// hard to reach with an ordinary DynamoDB response.
+type badUnmarshalField struct{}
+
+func (*badUnmarshalField) UnmarshalDynamoDBAttributeValue(types.AttributeValue) error {
+	return errors.New("boom: unmarshal failure")
+}
+
+// badUnmarshalItem is a widget-like fixture whose Bad field always fails to
+// unmarshal. It marshals fine (badUnmarshalField has no exported fields, so
+// it marshals as an empty map), so a normal MarshalMap of a badUnmarshalItem
+// produces a usable canned response for stub clients -- only unmarshaling it
+// back fails.
+type badUnmarshalItem struct {
+	Model
+	Bad badUnmarshalField
+}
+
+// noModelItem intentionally does NOT embed Model, to exercise the "struct
+// must embed godynamo.Model" panic branch of modelFieldOf via the public
+// Put/Get/etc. entry points.
+type noModelItem struct {
+	ID string
+}
+
 // stubClient is a hand-rolled dynamoAPI implementation controlled per-test
 // via function fields, so each test can assert on exactly what request was
 // built and control exactly what "AWS" returns.
@@ -440,3 +486,171 @@ func TestUpdate_ConditionalCheckFailed_TranslatesToOptimisticLock(t *testing.T) 
 }
 
 func awsString(s string) *string { return &s }
+
+func TestPut_NilItem_Panics(t *testing.T) {
+	db := testDB(&stubClient{})
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for nil item pointer")
+		}
+	}()
+	var item *widget
+	_ = Put(context.Background(), db, item)
+}
+
+func TestPut_ItemWithoutModel_Panics(t *testing.T) {
+	db := testDB(&stubClient{})
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for item not embedding Model")
+		}
+	}()
+	_ = Put(context.Background(), db, &noModelItem{ID: "x"})
+}
+
+func TestPut_GenericError_NotOptimisticLock(t *testing.T) {
+	item := &widget{Model: Model{ID: uuid.New()}, Name: "gizmo"}
+
+	db := testDB(&stubClient{
+		putFn: func(_ context.Context, _ *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) {
+			return nil, errors.New("aws: throttled")
+		},
+	})
+
+	err := Put(context.Background(), db, item)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if errors.Is(err, ErrOptimisticLock) {
+		t.Errorf("error = %v, should NOT wrap ErrOptimisticLock for a non-conditional-check error", err)
+	}
+}
+
+func TestPut_NewItem_ZeroID_GeneratesID(t *testing.T) {
+	item := &widget{Name: "gizmo"} // ID left as the zero uuid.UUID.
+
+	db := testDB(&stubClient{
+		putFn: func(_ context.Context, _ *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) {
+			return &dynamodb.PutItemOutput{}, nil
+		},
+	})
+
+	if err := Put(context.Background(), db, item); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+	if item.ID == uuid.Nil {
+		t.Error("item.ID is still the zero UUID, want Put to generate one")
+	}
+}
+
+func TestPut_MarshalError(t *testing.T) {
+	item := &badMarshalItem{Model: Model{ID: uuid.New()}}
+
+	var called bool
+	db := testDB(&stubClient{
+		putFn: func(_ context.Context, _ *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) {
+			called = true
+			return &dynamodb.PutItemOutput{}, nil
+		},
+	})
+
+	err := Put(context.Background(), db, item)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if called {
+		t.Error("PutItem was called, want no call when marshaling fails")
+	}
+}
+
+func TestGet_ClientError(t *testing.T) {
+	id := uuid.New()
+	db := testDB(&stubClient{
+		getFn: func(_ context.Context, _ *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
+			return nil, errors.New("aws: internal server error")
+		},
+	})
+
+	_, err := Get[widget](context.Background(), db, id)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if errors.Is(err, ErrNotFound) {
+		t.Errorf("error = %v, should NOT wrap ErrNotFound for a client error", err)
+	}
+}
+
+func TestGet_UnmarshalError(t *testing.T) {
+	id := uuid.New()
+	src := badUnmarshalItem{Model: Model{ID: id, Type: "badUnmarshalItem", CreatedAt: fixedNow, Version: 1}}
+	av, err := attributevalue.MarshalMap(src)
+	if err != nil {
+		t.Fatalf("MarshalMap() error = %v", err)
+	}
+	av["PK"] = &types.AttributeValueMemberS{Value: "badUnmarshalItem#" + id.String()}
+	av["SK"] = &types.AttributeValueMemberS{Value: "badUnmarshalItem#" + id.String()}
+
+	db := testDB(&stubClient{
+		getFn: func(_ context.Context, _ *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
+			return &dynamodb.GetItemOutput{Item: av}, nil
+		},
+	})
+
+	if _, err := Get[badUnmarshalItem](context.Background(), db, id); err == nil {
+		t.Fatal("expected unmarshal error, got nil")
+	}
+}
+
+func TestDelete_ClientError(t *testing.T) {
+	id := uuid.New()
+	db := testDB(&stubClient{
+		deleteFn: func(_ context.Context, _ *dynamodb.DeleteItemInput) (*dynamodb.DeleteItemOutput, error) {
+			return nil, errors.New("aws: internal server error")
+		},
+	})
+
+	if err := Delete[widget](context.Background(), db, id); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestUpdate_UnmarshalError(t *testing.T) {
+	id := uuid.New()
+	src := badUnmarshalItem{Model: Model{ID: id, Type: "badUnmarshalItem", CreatedAt: fixedNow, Version: 1}}
+	av, err := attributevalue.MarshalMap(src)
+	if err != nil {
+		t.Fatalf("MarshalMap() error = %v", err)
+	}
+
+	db := testDB(&stubClient{
+		updateFn: func(_ context.Context, _ *dynamodb.UpdateItemInput) (*dynamodb.UpdateItemOutput, error) {
+			return &dynamodb.UpdateItemOutput{Attributes: av}, nil
+		},
+	})
+
+	_, err = Update[badUnmarshalItem](context.Background(), db, id).Run(context.Background())
+	if err == nil {
+		t.Fatal("expected unmarshal error, got nil")
+	}
+}
+
+func TestUpdate_EmptyFieldName_BuildError(t *testing.T) {
+	id := uuid.New()
+	var called bool
+	db := testDB(&stubClient{
+		updateFn: func(_ context.Context, _ *dynamodb.UpdateItemInput) (*dynamodb.UpdateItemOutput, error) {
+			called = true
+			return &dynamodb.UpdateItemOutput{}, nil
+		},
+	})
+
+	_, err := Update[widget](context.Background(), db, id).
+		Set("", "invalid").
+		Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error building update expression with an empty field name, got nil")
+	}
+	if called {
+		t.Error("UpdateItem was called, want no call when building the expression fails")
+	}
+}

@@ -174,6 +174,62 @@ func TestBatchGet_RetryExhaustion(t *testing.T) {
 	}
 }
 
+func TestBatchGet_Empty_NoOp(t *testing.T) {
+	var called bool
+	db := testDB(&stubClient{
+		batchGetItemFn: func(_ context.Context, _ *dynamodb.BatchGetItemInput) (*dynamodb.BatchGetItemOutput, error) {
+			called = true
+			return &dynamodb.BatchGetItemOutput{}, nil
+		},
+	})
+
+	got, err := BatchGet[widget](context.Background(), db).Run()
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got != nil {
+		t.Errorf("Run() = %v, want nil", got)
+	}
+	if called {
+		t.Error("BatchGetItem was called, want no call when no IDs were queued")
+	}
+}
+
+func TestBatchGet_ClientError(t *testing.T) {
+	db := testDB(&stubClient{
+		batchGetItemFn: func(_ context.Context, _ *dynamodb.BatchGetItemInput) (*dynamodb.BatchGetItemOutput, error) {
+			return nil, errors.New("aws: throttled")
+		},
+	})
+
+	_, err := BatchGet[widget](context.Background(), db).IDs(uuid.New()).Run()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestBatchGet_UnmarshalError(t *testing.T) {
+	id := uuid.New()
+	src := badUnmarshalItem{Model: Model{ID: id, Type: "badUnmarshalItem", CreatedAt: fixedNow, Version: 1}}
+	av, err := attributevalue.MarshalMap(src)
+	if err != nil {
+		t.Fatalf("MarshalMap() error = %v", err)
+	}
+
+	db := testDB(&stubClient{
+		batchGetItemFn: func(_ context.Context, _ *dynamodb.BatchGetItemInput) (*dynamodb.BatchGetItemOutput, error) {
+			return &dynamodb.BatchGetItemOutput{
+				Responses: map[string][]map[string]types.AttributeValue{"test-table": {av}},
+			}, nil
+		},
+	})
+
+	_, err = BatchGet[badUnmarshalItem](context.Background(), db).IDs(id).Run()
+	if err == nil {
+		t.Fatal("expected unmarshal error, got nil")
+	}
+}
+
 func TestBatchWrite_PutAndDelete(t *testing.T) {
 	putItem := &widget{Model: Model{ID: uuid.New()}, Name: "new-gizmo"}
 	deleteID := uuid.New()
@@ -352,5 +408,59 @@ func TestBatchWrite_RetryExhaustion(t *testing.T) {
 	}
 	if errors.Is(err, ErrOptimisticLock) {
 		t.Errorf("error = %v, should not wrap ErrOptimisticLock", err)
+	}
+}
+
+func TestBatchWrite_Put_MarshalError_SkipsSubsequentItems(t *testing.T) {
+	// Two separate Put(...) calls: the first sets b.err; the second call's
+	// loop must immediately hit Put's "if b.err != nil { return b }"
+	// early-skip rather than attempt to stamp/marshal bad2.
+	bad1 := &badMarshalItem{Model: Model{ID: uuid.New()}}
+	bad2 := &badMarshalItem{Model: Model{ID: uuid.New()}}
+
+	var called bool
+	db := testDB(&stubClient{
+		batchWriteItemFn: func(_ context.Context, _ *dynamodb.BatchWriteItemInput) (*dynamodb.BatchWriteItemOutput, error) {
+			called = true
+			return &dynamodb.BatchWriteItemOutput{}, nil
+		},
+	})
+
+	err := BatchWrite[badMarshalItem](context.Background(), db).Put(bad1).Put(bad2).Run()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if called {
+		t.Error("BatchWriteItem was called, want no call once Put has recorded a marshal error")
+	}
+}
+
+func TestBatchWrite_Empty_NoOp(t *testing.T) {
+	var called bool
+	db := testDB(&stubClient{
+		batchWriteItemFn: func(_ context.Context, _ *dynamodb.BatchWriteItemInput) (*dynamodb.BatchWriteItemOutput, error) {
+			called = true
+			return &dynamodb.BatchWriteItemOutput{}, nil
+		},
+	})
+
+	if err := BatchWrite[widget](context.Background(), db).Run(); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if called {
+		t.Error("BatchWriteItem was called, want no call for an empty batch")
+	}
+}
+
+func TestBatchWrite_ClientError(t *testing.T) {
+	item := &widget{Model: Model{ID: uuid.New()}, Name: "gizmo"}
+	db := testDB(&stubClient{
+		batchWriteItemFn: func(_ context.Context, _ *dynamodb.BatchWriteItemInput) (*dynamodb.BatchWriteItemOutput, error) {
+			return nil, errors.New("aws: throttled")
+		},
+	})
+
+	if err := BatchWrite[widget](context.Background(), db).Put(item).Run(); err == nil {
+		t.Fatal("expected error, got nil")
 	}
 }

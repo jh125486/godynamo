@@ -2,6 +2,7 @@ package godynamo
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
@@ -324,6 +325,165 @@ func TestDecodeCursor_Invalid(t *testing.T) {
 	// Valid base64, but not valid JSON.
 	if _, err := decodeCursor("bm90LWpzb24"); err == nil {
 		t.Fatal("expected error for base64-valid-but-non-JSON payload, got nil")
+	}
+}
+
+func TestQuery_Limit(t *testing.T) {
+	var captured *dynamodb.QueryInput
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			captured = in
+			return &dynamodb.QueryOutput{}, nil
+		},
+	})
+
+	if _, err := Query[widget](context.Background(), db).Limit(25).All(); err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if captured.Limit == nil || *captured.Limit != 25 {
+		t.Errorf("Limit = %v, want 25", captured.Limit)
+	}
+}
+
+func TestQuery_Filter_EmptyFieldName_BuildError(t *testing.T) {
+	var called bool
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, _ *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			called = true
+			return &dynamodb.QueryOutput{}, nil
+		},
+	})
+
+	_, err := Query[widget](context.Background(), db).Filter("", "x").All()
+	if err == nil {
+		t.Fatal("expected error building query expression with an empty filter field name, got nil")
+	}
+	if called {
+		t.Error("Query was called, want no call when building the expression fails")
+	}
+}
+
+func TestQuery_Page_Filter_EmptyFieldName_BuildError(t *testing.T) {
+	var called bool
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, _ *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			called = true
+			return &dynamodb.QueryOutput{}, nil
+		},
+	})
+
+	_, _, err := Query[widget](context.Background(), db).Filter("", "x").Page("")
+	if err == nil {
+		t.Fatal("expected error building query expression with an empty filter field name, got nil")
+	}
+	if called {
+		t.Error("Query was called, want no call when building the expression fails")
+	}
+}
+
+func TestQuery_All_ClientError(t *testing.T) {
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, _ *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			return nil, errors.New("aws: throttled")
+		},
+	})
+
+	if _, err := Query[widget](context.Background(), db).All(); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestQuery_All_UnmarshalError(t *testing.T) {
+	src := badUnmarshalItem{Model: Model{ID: uuid.New(), Type: "badUnmarshalItem", CreatedAt: fixedNow, Version: 1}}
+	av, err := attributevalue.MarshalMap(src)
+	if err != nil {
+		t.Fatalf("MarshalMap() error = %v", err)
+	}
+
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, _ *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			return &dynamodb.QueryOutput{Items: []map[string]types.AttributeValue{av}}, nil
+		},
+	})
+
+	if _, err := Query[badUnmarshalItem](context.Background(), db).All(); err == nil {
+		t.Fatal("expected unmarshal error, got nil")
+	}
+}
+
+func TestQuery_Page_ClientError(t *testing.T) {
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, _ *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			return nil, errors.New("aws: throttled")
+		},
+	})
+
+	_, _, err := Query[widget](context.Background(), db).Page("")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestQuery_Page_UnmarshalError(t *testing.T) {
+	src := badUnmarshalItem{Model: Model{ID: uuid.New(), Type: "badUnmarshalItem", CreatedAt: fixedNow, Version: 1}}
+	av, err := attributevalue.MarshalMap(src)
+	if err != nil {
+		t.Fatalf("MarshalMap() error = %v", err)
+	}
+
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, _ *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			return &dynamodb.QueryOutput{Items: []map[string]types.AttributeValue{av}}, nil
+		},
+	})
+
+	_, _, err = Query[badUnmarshalItem](context.Background(), db).Page("")
+	if err == nil {
+		t.Fatal("expected unmarshal error, got nil")
+	}
+}
+
+func TestQuery_Page_EncodeCursorError(t *testing.T) {
+	// A LastEvaluatedKey with a malformed N (Number) value round-trips fine
+	// through attributevalue.UnmarshalMap (it decodes to math.NaN() -- Go's
+	// strconv happily parses the literal "NaN"), but then fails
+	// encodeCursor's json.Marshal step, since encoding/json rejects
+	// NaN/Inf float64 values. This is how a real (if byzantine/corrupted)
+	// LastEvaluatedKey could realistically trip this path.
+	lastKey := map[string]types.AttributeValue{
+		"PK": &types.AttributeValueMemberN{Value: "NaN"},
+	}
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, _ *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			return &dynamodb.QueryOutput{LastEvaluatedKey: lastKey}, nil
+		},
+	})
+
+	_, _, err := Query[widget](context.Background(), db).Page("")
+	if err == nil {
+		t.Fatal("expected encodeCursor error, got nil")
+	}
+}
+
+func TestEncodeCursor_UnmarshalError(t *testing.T) {
+	// A Number attribute whose Value isn't actually parseable as a number
+	// fails attributevalue.UnmarshalMap -- the SDK's AttributeValue types
+	// are just plain structs, so this is constructible even though DynamoDB
+	// itself would never really produce such a value.
+	key := map[string]types.AttributeValue{
+		"PK": &types.AttributeValueMemberN{Value: "not-a-number"},
+	}
+	if _, err := encodeCursor(key); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestEncodeCursor_MarshalJSONError(t *testing.T) {
+	key := map[string]types.AttributeValue{
+		"PK": &types.AttributeValueMemberN{Value: "NaN"},
+	}
+	if _, err := encodeCursor(key); err == nil {
+		t.Fatal("expected error, got nil")
 	}
 }
 
