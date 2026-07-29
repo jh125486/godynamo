@@ -1,9 +1,10 @@
 //go:build integration
 
 // This file exercises the godynamo package end-to-end against a real
-// DynamoDB (via DynamoDB Local, run through testcontainers-go). It is
-// excluded from the default `go test ./...` run by the "integration" build
-// tag, since it requires a working Docker daemon. Run it explicitly with:
+// DynamoDB-compatible backend (Gopherstack, run through testcontainers-go).
+// It is excluded from the default `go test ./...` run by the "integration"
+// build tag, since it requires a working Docker daemon. Run it explicitly
+// with:
 //
 //	go test -tags=integration ./...
 //
@@ -23,9 +24,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/blackbirdworks/gopherstack/modules/gopherstack"
 	"github.com/google/uuid"
 	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/jh125486/godynamo"
 )
@@ -52,37 +53,25 @@ type CustomerOrder struct {
 	Status         string
 }
 
-// startDynamoDBLocal starts an amazon/dynamodb-local container and returns a
-// *dynamodb.Client pointed at it, plus a cleanup func. It calls t.Skipf
-// (never t.Fatal) if Docker/container startup fails for any reason, since
-// this environment may not have a Docker daemon running.
+// startDynamoDBLocal starts a Gopherstack container (a Go-native AWS
+// emulator with a DynamoDB implementation) and returns a *dynamodb.Client
+// pointed at it, plus a cleanup func. It calls t.Skipf (never t.Fatal) if
+// Docker/container startup fails for any reason, since this environment may
+// not have a Docker daemon running.
 func startDynamoDBLocal(t *testing.T) *dynamodb.Client {
 	t.Helper()
 	ctx := context.Background()
 
-	req := testcontainers.ContainerRequest{
-		Image:        "amazon/dynamodb-local:latest",
-		ExposedPorts: []string{"8000/tcp"},
-		WaitingFor:   wait.ForListeningPort("8000/tcp"),
-	}
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
-	})
+	container, err := gopherstack.Run(ctx, gopherstack.DefaultImage)
 	if err != nil {
 		t.Skipf("docker unavailable: %v", err)
 	}
 	testcontainers.CleanupContainer(t, container)
 
-	host, err := container.Host(ctx)
+	endpoint, err := container.BaseURL(ctx)
 	if err != nil {
 		t.Skipf("docker unavailable: %v", err)
 	}
-	mappedPort, err := container.MappedPort(ctx, "8000/tcp")
-	if err != nil {
-		t.Skipf("docker unavailable: %v", err)
-	}
-	endpoint := fmt.Sprintf("http://%s:%s", host, mappedPort.Port())
 
 	cfg, err := awsconfig.LoadDefaultConfig(ctx,
 		awsconfig.WithRegion("us-east-1"),

@@ -68,11 +68,13 @@ func asOptimisticLockErr(err error, action, typeName string, id uuid.UUID) error
 // item), and marshals the result into a DynamoDB attribute map with
 // "PK"/"SK" (and, on create, "GSI1PK") injected.
 //
-//   - Zero (new item): calls [SetType], stamps CreatedAt/CreatedBy and
-//     UpdatedAt/UpdatedBy with db's clock/actor, sets Version to 1, and
-//     returns a condition of attribute_not_exists(PK) so an accidental
-//     double-create can be rejected by callers that support per-item
-//     conditions.
+//   - Zero (new item): if item's Model.ID is the zero uuid.UUID, generates a
+//     new random ID (so callers can construct a new entity without setting
+//     ID themselves, matching the README/Example usage pattern), calls
+//     [SetType], stamps CreatedAt/CreatedBy and UpdatedAt/UpdatedBy with
+//     db's clock/actor, sets Version to 1, and returns a condition of
+//     attribute_not_exists(PK) so an accidental double-create can be
+//     rejected by callers that support per-item conditions.
 //   - Non-zero (re-write of an existing item, e.g. after a Get+mutate+Put
 //     round trip): CreatedAt/CreatedBy are left untouched, UpdatedAt/
 //     UpdatedBy are stamped with db's clock/actor, Version is incremented
@@ -101,6 +103,9 @@ func stampAndMarshal(ctx context.Context, db *DB, item any) (av map[string]types
 	var newItem bool
 	if model.CreatedAt.IsZero() {
 		newItem = true
+		if model.ID == uuid.Nil {
+			mf.FieldByName("ID").Set(reflect.ValueOf(uuid.New()))
+		}
 		SetType(item)
 		mf.FieldByName("CreatedAt").Set(reflect.ValueOf(now))
 		mf.FieldByName("CreatedBy").SetString(actor)
