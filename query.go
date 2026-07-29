@@ -32,10 +32,27 @@ type skCondition struct {
 	lo, hi string // hi is only used for skBetween
 }
 
-// filterCondition is a single queued equality [QueryBuilder.Filter] clause.
+// filterCondition is a single queued equality [QueryBuilder.Filter] (or
+// [ScanBuilder.Filter]) clause.
 type filterCondition struct {
 	field string
 	value any
+}
+
+// filterExpression ANDs together an equality condition for each filter in
+// filters, in order: filters[0].field = filters[0].value AND filters[1].field
+// = filters[1].value AND ... Shared by [QueryBuilder.buildInput] and
+// [ScanBuilder.buildInput].
+//
+// filters must be non-empty — callers are expected to check len(filters) > 0
+// before calling this (a zero-value expression.ConditionBuilder is not a
+// valid filter condition to hand to WithFilter).
+func filterExpression(filters []filterCondition) expression.ConditionBuilder {
+	cond := expression.Name(filters[0].field).Equal(expression.Value(filters[0].value))
+	for _, f := range filters[1:] {
+		cond = cond.And(expression.Name(f.field).Equal(expression.Value(f.value)))
+	}
+	return cond
 }
 
 // QueryBuilder is a fluent builder for a DynamoDB Query, obtained via
@@ -167,11 +184,7 @@ func (b *QueryBuilder[T]) buildInput() (*dynamodb.QueryInput, error) {
 	eb := expression.NewBuilder().WithKeyCondition(keyCond)
 
 	if len(b.filters) > 0 {
-		filterCond := expression.Name(b.filters[0].field).Equal(expression.Value(b.filters[0].value))
-		for _, f := range b.filters[1:] {
-			filterCond = filterCond.And(expression.Name(f.field).Equal(expression.Value(f.value)))
-		}
-		eb = eb.WithFilter(filterCond)
+		eb = eb.WithFilter(filterExpression(b.filters))
 	}
 
 	expr, err := eb.Build()

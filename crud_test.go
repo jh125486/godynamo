@@ -27,6 +27,7 @@ type stubClient struct {
 	updateFn func(ctx context.Context, in *dynamodb.UpdateItemInput) (*dynamodb.UpdateItemOutput, error)
 	deleteFn func(ctx context.Context, in *dynamodb.DeleteItemInput) (*dynamodb.DeleteItemOutput, error)
 	queryFn  func(ctx context.Context, in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error)
+	scanFn   func(ctx context.Context, in *dynamodb.ScanInput) (*dynamodb.ScanOutput, error)
 }
 
 func (s *stubClient) GetItem(ctx context.Context, in *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
@@ -47,6 +48,10 @@ func (s *stubClient) DeleteItem(ctx context.Context, in *dynamodb.DeleteItemInpu
 
 func (s *stubClient) Query(ctx context.Context, in *dynamodb.QueryInput, _ ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
 	return s.queryFn(ctx, in)
+}
+
+func (s *stubClient) Scan(ctx context.Context, in *dynamodb.ScanInput, _ ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error) {
+	return s.scanFn(ctx, in)
 }
 
 var fixedNow = time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
