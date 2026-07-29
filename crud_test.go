@@ -28,6 +28,11 @@ type stubClient struct {
 	deleteFn func(ctx context.Context, in *dynamodb.DeleteItemInput) (*dynamodb.DeleteItemOutput, error)
 	queryFn  func(ctx context.Context, in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error)
 	scanFn   func(ctx context.Context, in *dynamodb.ScanInput) (*dynamodb.ScanOutput, error)
+
+	batchGetItemFn       func(ctx context.Context, in *dynamodb.BatchGetItemInput) (*dynamodb.BatchGetItemOutput, error)
+	batchWriteItemFn     func(ctx context.Context, in *dynamodb.BatchWriteItemInput) (*dynamodb.BatchWriteItemOutput, error)
+	transactGetItemsFn   func(ctx context.Context, in *dynamodb.TransactGetItemsInput) (*dynamodb.TransactGetItemsOutput, error)
+	transactWriteItemsFn func(ctx context.Context, in *dynamodb.TransactWriteItemsInput) (*dynamodb.TransactWriteItemsOutput, error)
 }
 
 func (s *stubClient) GetItem(ctx context.Context, in *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
@@ -52,6 +57,22 @@ func (s *stubClient) Query(ctx context.Context, in *dynamodb.QueryInput, _ ...fu
 
 func (s *stubClient) Scan(ctx context.Context, in *dynamodb.ScanInput, _ ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error) {
 	return s.scanFn(ctx, in)
+}
+
+func (s *stubClient) BatchGetItem(ctx context.Context, in *dynamodb.BatchGetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.BatchGetItemOutput, error) {
+	return s.batchGetItemFn(ctx, in)
+}
+
+func (s *stubClient) BatchWriteItem(ctx context.Context, in *dynamodb.BatchWriteItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.BatchWriteItemOutput, error) {
+	return s.batchWriteItemFn(ctx, in)
+}
+
+func (s *stubClient) TransactGetItems(ctx context.Context, in *dynamodb.TransactGetItemsInput, _ ...func(*dynamodb.Options)) (*dynamodb.TransactGetItemsOutput, error) {
+	return s.transactGetItemsFn(ctx, in)
+}
+
+func (s *stubClient) TransactWriteItems(ctx context.Context, in *dynamodb.TransactWriteItemsInput, _ ...func(*dynamodb.Options)) (*dynamodb.TransactWriteItemsOutput, error) {
+	return s.transactWriteItemsFn(ctx, in)
 }
 
 var fixedNow = time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)

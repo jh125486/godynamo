@@ -61,6 +61,77 @@ func asOptimisticLockErr(err error, action, typeName string, id uuid.UUID) error
 	return fmt.Errorf("godynamo: %s %s (id=%s): %w", action, typeName, id, err)
 }
 
+// stampAndMarshal implements the create-vs-update audit-stamping logic
+// shared by [Put], [BatchWriteBuilder.Put], and [TransactWriteBuilder.Put]:
+// it determines create vs. update from whether item's Model.CreatedAt is
+// the zero time.Time, stamps the appropriate fields in place (mutating
+// item), and marshals the result into a DynamoDB attribute map with
+// "PK"/"SK" (and, on create, "GSI1PK") injected.
+//
+//   - Zero (new item): calls [SetType], stamps CreatedAt/CreatedBy and
+//     UpdatedAt/UpdatedBy with db's clock/actor, sets Version to 1, and
+//     returns a condition of attribute_not_exists(PK) so an accidental
+//     double-create can be rejected by callers that support per-item
+//     conditions.
+//   - Non-zero (re-write of an existing item, e.g. after a Get+mutate+Put
+//     round trip): CreatedAt/CreatedBy are left untouched, UpdatedAt/
+//     UpdatedBy are stamped with db's clock/actor, Version is incremented
+//     by 1 in the written item, and the returned condition is
+//     Version = :expected (the item's version before this call).
+//
+// item's PK/SK are computed via [PK]/[SK] (after Type and the audit fields
+// are set, since key templates may reference sibling fields including
+// Type) and written under the literal attribute names "PK"/"SK". On the
+// new-item path, a "GSI1PK" attribute is also set to item's Type (the same
+// struct-name string [SetType] stamps).
+//
+// The returned cond is always populated, but it is only meaningful to
+// callers whose underlying DynamoDB API supports a per-item
+// ConditionExpression (PutItem, and TransactWriteItems' types.Put).
+// BatchWriteItem has no such support at all — callers going through
+// BatchWriteItem (see [BatchWriteBuilder.Put]) must discard cond.
+func stampAndMarshal(ctx context.Context, db *DB, item any) (av map[string]types.AttributeValue, cond expression.ConditionBuilder, err error) {
+	typeName := reflect.TypeOf(item).Elem().Name()
+	mf := modelFieldOf(item)
+	model := mf.Interface().(Model)
+
+	now := db.clock()
+	actor := db.actor(ctx)
+
+	var newItem bool
+	if model.CreatedAt.IsZero() {
+		newItem = true
+		SetType(item)
+		mf.FieldByName("CreatedAt").Set(reflect.ValueOf(now))
+		mf.FieldByName("CreatedBy").SetString(actor)
+		mf.FieldByName("UpdatedAt").Set(reflect.ValueOf(now))
+		mf.FieldByName("UpdatedBy").SetString(actor)
+		mf.FieldByName("Version").SetInt(1)
+
+		cond = expression.Name("PK").AttributeNotExists()
+	} else {
+		expectedVersion := model.Version
+		mf.FieldByName("UpdatedAt").Set(reflect.ValueOf(now))
+		mf.FieldByName("UpdatedBy").SetString(actor)
+		mf.FieldByName("Version").SetInt(int64(expectedVersion + 1))
+
+		cond = expression.Name("Version").Equal(expression.Value(expectedVersion))
+	}
+
+	av, err = attributevalue.MarshalMap(item)
+	if err != nil {
+		return nil, cond, fmt.Errorf("godynamo: marshaling %s (id=%s): %w", typeName, model.ID, err)
+	}
+	pk, sk := PK(item), SK(item)
+	av["PK"] = &types.AttributeValueMemberS{Value: pk}
+	av["SK"] = &types.AttributeValueMemberS{Value: sk}
+	if newItem {
+		av["GSI1PK"] = &types.AttributeValueMemberS{Value: typeName}
+	}
+
+	return av, cond, nil
+}
+
 // Put creates or updates item, an entity of type T embedding [Model].
 //
 // Create vs. update is determined by whether item's Model.CreatedAt is the
@@ -95,47 +166,16 @@ func asOptimisticLockErr(err error, action, typeName string, id uuid.UUID) error
 // of scope for this package.
 func Put[T any](ctx context.Context, db *DB, item *T) error {
 	typeName := reflect.TypeFor[T]().Name()
-	mf := modelFieldOf(item)
-	model := mf.Interface().(Model)
 
-	now := db.clock()
-	actor := db.actor(ctx)
-
-	var cond expression.ConditionBuilder
-	var newItem bool
-	if model.CreatedAt.IsZero() {
-		newItem = true
-		SetType(item)
-		mf.FieldByName("CreatedAt").Set(reflect.ValueOf(now))
-		mf.FieldByName("CreatedBy").SetString(actor)
-		mf.FieldByName("UpdatedAt").Set(reflect.ValueOf(now))
-		mf.FieldByName("UpdatedBy").SetString(actor)
-		mf.FieldByName("Version").SetInt(1)
-
-		cond = expression.Name("PK").AttributeNotExists()
-	} else {
-		expectedVersion := model.Version
-		mf.FieldByName("UpdatedAt").Set(reflect.ValueOf(now))
-		mf.FieldByName("UpdatedBy").SetString(actor)
-		mf.FieldByName("Version").SetInt(int64(expectedVersion + 1))
-
-		cond = expression.Name("Version").Equal(expression.Value(expectedVersion))
+	av, cond, err := stampAndMarshal(ctx, db, item)
+	if err != nil {
+		return err
 	}
+	model := modelFieldOf(item).Interface().(Model)
 
 	expr, err := expression.NewBuilder().WithCondition(cond).Build()
 	if err != nil {
 		return fmt.Errorf("godynamo: building put condition for %s (id=%s): %w", typeName, model.ID, err)
-	}
-
-	av, err := attributevalue.MarshalMap(item)
-	if err != nil {
-		return fmt.Errorf("godynamo: marshaling %s (id=%s): %w", typeName, model.ID, err)
-	}
-	pk, sk := PK(item), SK(item)
-	av["PK"] = &types.AttributeValueMemberS{Value: pk}
-	av["SK"] = &types.AttributeValueMemberS{Value: sk}
-	if newItem {
-		av["GSI1PK"] = &types.AttributeValueMemberS{Value: typeName}
 	}
 
 	_, err = db.client.PutItem(ctx, &dynamodb.PutItemInput{
