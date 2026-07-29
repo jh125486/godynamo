@@ -301,7 +301,7 @@ func TestPut_ConditionalCheckFailed_TranslatesToOptimisticLock(t *testing.T) {
 
 	db := testDB(&stubClient{
 		putFn: func(_ context.Context, _ *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) {
-			return nil, &types.ConditionalCheckFailedException{Message: awsString("nope")}
+			return nil, &types.ConditionalCheckFailedException{Message: new("nope")}
 		},
 	})
 
@@ -473,7 +473,7 @@ func TestUpdate_ConditionalCheckFailed_TranslatesToOptimisticLock(t *testing.T) 
 	id := uuid.New()
 	db := testDB(&stubClient{
 		updateFn: func(_ context.Context, _ *dynamodb.UpdateItemInput) (*dynamodb.UpdateItemOutput, error) {
-			return nil, &types.ConditionalCheckFailedException{Message: awsString("nope")}
+			return nil, &types.ConditionalCheckFailedException{Message: new("nope")}
 		},
 	})
 
@@ -484,8 +484,6 @@ func TestUpdate_ConditionalCheckFailed_TranslatesToOptimisticLock(t *testing.T) 
 		t.Errorf("error = %v, want wrapping ErrOptimisticLock", err)
 	}
 }
-
-func awsString(s string) *string { return &s }
 
 func TestPut_NilItem_Panics(t *testing.T) {
 	db := testDB(&stubClient{})

@@ -62,7 +62,7 @@ func Keys(v any) (pk, sk string) {
 // a struct.
 func structValueOf(v any) reflect.Value {
 	rv := reflect.ValueOf(v)
-	for rv.Kind() == reflect.Ptr {
+	for rv.Kind() == reflect.Pointer {
 		if rv.IsNil() {
 			panic("godynamo: nil pointer passed to key builder")
 		}

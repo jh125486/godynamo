@@ -20,12 +20,12 @@ import (
 // convention of the Phase 1 key builders.
 func modelFieldOf(item any) reflect.Value {
 	rv := reflect.ValueOf(item)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		panic("godynamo: expected a non-nil pointer to a struct embedding Model")
 	}
 	elem := rv.Elem()
 	mf := elem.FieldByName("Model")
-	if !mf.IsValid() || mf.Type() != reflect.TypeOf(Model{}) {
+	if !mf.IsValid() || mf.Type() != reflect.TypeFor[Model]() {
 		panic("godynamo: struct must embed godynamo.Model")
 	}
 	return mf
@@ -54,8 +54,7 @@ func itemKey(pk, sk string) map[string]types.AttributeValue {
 // into ErrOptimisticLock (wrapped with context), leaving other errors
 // (also wrapped with context) as-is.
 func asOptimisticLockErr(err error, action, typeName string, id uuid.UUID) error {
-	var condErr *types.ConditionalCheckFailedException
-	if errors.As(err, &condErr) {
+	if _, ok := errors.AsType[*types.ConditionalCheckFailedException](err); ok {
 		return fmt.Errorf("godynamo: %s %s (id=%s): %w", action, typeName, id, ErrOptimisticLock)
 	}
 	return fmt.Errorf("godynamo: %s %s (id=%s): %w", action, typeName, id, err)
@@ -92,7 +91,9 @@ func asOptimisticLockErr(err error, action, typeName string, id uuid.UUID) error
 // ConditionExpression (PutItem, and TransactWriteItems' types.Put).
 // BatchWriteItem has no such support at all — callers going through
 // BatchWriteItem (see [BatchWriteBuilder.Put]) must discard cond.
-func stampAndMarshal(ctx context.Context, db *DB, item any) (av map[string]types.AttributeValue, cond expression.ConditionBuilder, err error) {
+func stampAndMarshal(
+	ctx context.Context, db *DB, item any,
+) (av map[string]types.AttributeValue, cond expression.ConditionBuilder, err error) {
 	typeName := reflect.TypeOf(item).Elem().Name()
 	mf := modelFieldOf(item)
 	model := mf.Interface().(Model)

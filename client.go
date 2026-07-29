@@ -21,10 +21,18 @@ type dynamoAPI interface {
 	DeleteItem(ctx context.Context, params *dynamodb.DeleteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error)
 	Query(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error)
 	Scan(ctx context.Context, params *dynamodb.ScanInput, optFns ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error)
-	BatchGetItem(ctx context.Context, params *dynamodb.BatchGetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.BatchGetItemOutput, error)
-	BatchWriteItem(ctx context.Context, params *dynamodb.BatchWriteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.BatchWriteItemOutput, error)
-	TransactGetItems(ctx context.Context, params *dynamodb.TransactGetItemsInput, optFns ...func(*dynamodb.Options)) (*dynamodb.TransactGetItemsOutput, error)
-	TransactWriteItems(ctx context.Context, params *dynamodb.TransactWriteItemsInput, optFns ...func(*dynamodb.Options)) (*dynamodb.TransactWriteItemsOutput, error)
+	BatchGetItem(
+		ctx context.Context, params *dynamodb.BatchGetItemInput, optFns ...func(*dynamodb.Options),
+	) (*dynamodb.BatchGetItemOutput, error)
+	BatchWriteItem(
+		ctx context.Context, params *dynamodb.BatchWriteItemInput, optFns ...func(*dynamodb.Options),
+	) (*dynamodb.BatchWriteItemOutput, error)
+	TransactGetItems(
+		ctx context.Context, params *dynamodb.TransactGetItemsInput, optFns ...func(*dynamodb.Options),
+	) (*dynamodb.TransactGetItemsOutput, error)
+	TransactWriteItems(
+		ctx context.Context, params *dynamodb.TransactWriteItemsInput, optFns ...func(*dynamodb.Options),
+	) (*dynamodb.TransactWriteItemsOutput, error)
 }
 
 // DB wraps a DynamoDB client plus the single-table-design config (table

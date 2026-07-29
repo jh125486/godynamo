@@ -56,7 +56,7 @@ type Model struct {
 // from gracefully.
 func SetType(v any) {
 	rv := reflect.ValueOf(v)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		panic("godynamo: SetType requires a non-nil pointer to a struct embedding Model")
 	}
 	elem := rv.Elem()
@@ -65,7 +65,7 @@ func SetType(v any) {
 	}
 
 	m := elem.FieldByName("Model")
-	if !m.IsValid() || m.Type() != reflect.TypeOf(Model{}) {
+	if !m.IsValid() || m.Type() != reflect.TypeFor[Model]() {
 		panic("godynamo: SetType requires a struct embedding godynamo.Model")
 	}
 

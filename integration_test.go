@@ -235,7 +235,7 @@ func TestIntegration_EndToEnd(t *testing.T) {
 	})
 
 	t.Run("QueryTypeIndex", func(t *testing.T) {
-		var want []string
+		want := make([]string, 0, 3)
 		for i := range 3 {
 			p := &Product{Name: fmt.Sprintf("QP-%d", i), Price: i}
 			if err := godynamo.Put(ctx, db, p); err != nil {

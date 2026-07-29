@@ -173,6 +173,8 @@ func (b *QueryBuilder[T]) buildInput() (*dynamodb.QueryInput, error) {
 	}
 
 	switch b.sk.kind {
+	case skNone:
+		// No SK condition queued; keyCond stays as the PK-only condition.
 	case skEquals:
 		keyCond = keyCond.And(expression.Key("SK").Equal(expression.Value(b.sk.lo)))
 	case skBeginsWith:

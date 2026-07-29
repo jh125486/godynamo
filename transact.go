@@ -82,7 +82,10 @@ func (b *TransactGetBuilder) Run() error {
 		return nil
 	}
 	if len(b.dsts) > transactMaxItems {
-		return fmt.Errorf("godynamo: transact get: %d items queued, exceeds the %d-item TransactGetItems limit (no auto-chunking — would break atomicity)", len(b.dsts), transactMaxItems)
+		return fmt.Errorf(
+			"godynamo: transact get: %d items queued, exceeds the %d-item TransactGetItems limit (no auto-chunking — would break atomicity)",
+			len(b.dsts), transactMaxItems,
+		)
 	}
 
 	transactItems := make([]types.TransactGetItem, len(b.dsts))
@@ -253,7 +256,10 @@ func (b *TransactWriteBuilder) Run() error {
 		return nil
 	}
 	if len(b.items) > transactMaxItems {
-		return fmt.Errorf("godynamo: transact write: %d entries queued, exceeds the %d-entry TransactWriteItems limit (no auto-chunking — would break atomicity)", len(b.items), transactMaxItems)
+		return fmt.Errorf(
+			"godynamo: transact write: %d entries queued, exceeds the %d-entry TransactWriteItems limit (no auto-chunking — would break atomicity)",
+			len(b.items), transactMaxItems,
+		)
 	}
 
 	_, err := b.db.client.TransactWriteItems(b.ctx, &dynamodb.TransactWriteItemsInput{
@@ -273,8 +279,7 @@ func (b *TransactWriteBuilder) Run() error {
 // conditional-check failure — are wrapped with context but not mapped to
 // ErrOptimisticLock.
 func translateTransactWriteErr(err error) error {
-	var txErr *types.TransactionCanceledException
-	if errors.As(err, &txErr) {
+	if txErr, ok := errors.AsType[*types.TransactionCanceledException](err); ok {
 		codes := cancellationReasonCodes(txErr.CancellationReasons)
 		for _, reason := range txErr.CancellationReasons {
 			if reason.Code != nil && *reason.Code == conditionalCheckFailedCode {

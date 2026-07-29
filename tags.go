@@ -54,6 +54,8 @@ type modelTags struct {
 
 // tagCache caches parsed modelTags per struct reflect.Type so the (small)
 // cost of tag parsing is paid at most once per type, not once per call.
+//
+//nolint:gochecknoglobals // process-lifetime memoization cache, not mutable config/state.
 var tagCache sync.Map // map[reflect.Type]*modelTags
 
 // parseTags returns the cached (or freshly parsed) modelTags for struct
@@ -64,7 +66,7 @@ func parseTags(t reflect.Type) *modelTags {
 	}
 
 	field, ok := t.FieldByName("Model")
-	if !ok || field.Type != reflect.TypeOf(Model{}) {
+	if !ok || field.Type != reflect.TypeFor[Model]() {
 		panic("godynamo: struct " + t.Name() + " must embed godynamo.Model")
 	}
 
@@ -72,7 +74,7 @@ func parseTags(t reflect.Type) *modelTags {
 
 	tag, ok := field.Tag.Lookup(tagKey)
 	if ok && strings.TrimSpace(tag) != "" {
-		for _, clause := range strings.Split(tag, clauseSep) {
+		for clause := range strings.SplitSeq(tag, clauseSep) {
 			clause = strings.TrimSpace(clause)
 			if clause == "" {
 				continue

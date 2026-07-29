@@ -352,9 +352,9 @@ func TestTransactWrite_ConditionalCheckFailed_TranslatesToOptimisticLock(t *test
 	db := testDB(&stubClient{
 		transactWriteItemsFn: func(_ context.Context, _ *dynamodb.TransactWriteItemsInput) (*dynamodb.TransactWriteItemsOutput, error) {
 			return nil, &types.TransactionCanceledException{
-				Message: awsString("cancelled"),
+				Message: new("cancelled"),
 				CancellationReasons: []types.CancellationReason{
-					{Code: awsString("None")},
+					{Code: new("None")},
 					{Code: &code},
 				},
 			}
@@ -377,7 +377,7 @@ func TestTransactWrite_NonConditionCancellation_NotOptimisticLock(t *testing.T) 
 	db := testDB(&stubClient{
 		transactWriteItemsFn: func(_ context.Context, _ *dynamodb.TransactWriteItemsInput) (*dynamodb.TransactWriteItemsOutput, error) {
 			return nil, &types.TransactionCanceledException{
-				Message:             awsString("cancelled"),
+				Message:             new("cancelled"),
 				CancellationReasons: []types.CancellationReason{{Code: &code}},
 			}
 		},

@@ -20,7 +20,7 @@ type internalNoTags struct {
 }
 
 func TestParseTags_NoClauses(t *testing.T) {
-	mt := parseTags(reflect.TypeOf(internalNoTags{}))
+	mt := parseTags(reflect.TypeFor[internalNoTags]())
 	if mt.pkFields != nil {
 		t.Fatalf("pkFields = %v, want nil", mt.pkFields)
 	}
@@ -33,7 +33,7 @@ func TestParseTags_NoClauses(t *testing.T) {
 }
 
 func TestParseTags_BothClauses(t *testing.T) {
-	mt := parseTags(reflect.TypeOf(internalOrder{}))
+	mt := parseTags(reflect.TypeFor[internalOrder]())
 
 	wantPK := []string{"CustomerID"}
 	wantSK := []string{"Status", "CreatedDate"}
@@ -47,7 +47,7 @@ func TestParseTags_BothClauses(t *testing.T) {
 }
 
 func TestParseTags_CachedAcrossCalls(t *testing.T) {
-	typ := reflect.TypeOf(internalOrder{})
+	typ := reflect.TypeFor[internalOrder]()
 
 	first := parseTags(typ)
 	second := parseTags(typ)
@@ -66,7 +66,7 @@ func TestParseTags_PanicsWithoutModel(t *testing.T) {
 			t.Fatal("expected panic for struct without embedded Model")
 		}
 	}()
-	parseTags(reflect.TypeOf(noModel{}))
+	parseTags(reflect.TypeFor[noModel]())
 }
 
 // internalMalformedClauses has a tag with an empty clause (from the
@@ -79,7 +79,7 @@ type internalMalformedClauses struct {
 }
 
 func TestParseTags_SkipsEmptyAndMalformedClauses(t *testing.T) {
-	mt := parseTags(reflect.TypeOf(internalMalformedClauses{}))
+	mt := parseTags(reflect.TypeFor[internalMalformedClauses]())
 
 	wantPK := []string{"CustomerID"}
 	wantSK := []string{"Status"}

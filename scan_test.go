@@ -246,7 +246,7 @@ func TestScan_Parallel_SegmentsSetCorrectly(t *testing.T) {
 			t.Errorf("IndexName = %q, want unset", *in.IndexName)
 		}
 	}
-	for i := int32(0); i < n; i++ {
+	for i := range int32(n) {
 		if !seen[i] {
 			t.Errorf("segment %d never scanned; seen = %v", i, seen)
 		}

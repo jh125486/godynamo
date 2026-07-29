@@ -3,6 +3,7 @@ package godynamo
 import (
 	"context"
 	"fmt"
+	"math"
 	"reflect"
 	"sync"
 
@@ -98,7 +99,12 @@ func (b *ScanBuilder[T]) buildInput(segment int) (*dynamodb.ScanInput, error) {
 		input.Limit = b.limit
 	}
 	if b.totalSegments > 1 {
-		seg := int32(segment)
+		if b.totalSegments > math.MaxInt32 {
+			return nil, fmt.Errorf("godynamo: scan: totalSegments %d exceeds int32 range", b.totalSegments)
+		}
+		// segment is always in [0, b.totalSegments), and b.totalSegments was
+		// just bounds-checked above, so both conversions below are safe.
+		seg := int32(segment) //nolint:gosec // bounds-checked above
 		total := int32(b.totalSegments)
 		input.Segment = &seg
 		input.TotalSegments = &total
