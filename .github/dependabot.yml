@@ -26,6 +26,39 @@ updates:
     directory: "/tools" # Location of package manifests (isolated dev-tools module)
     schedule:
       interval: "daily"
+    # tools/go.mod's self-require+replace trick (require github.com/jh125486/godynamo
+    # v0.0.0 + replace => ./, needed so `go tool -modfile=tools/go.mod <tool> ./...`
+    # invoked from the repo root can typecheck the real repo's own packages — the
+    # relative replace path resolves against the invoking CWD, not the modfile's
+    # directory, see f2d2c59) pulls the real package's own dependency graph
+    # (aws-sdk-go-v2, credentials, service/dynamodb, attributevalue, expression,
+    # blackbirdworks/gopherstack, google/uuid, testcontainers-go) into tools/go.mod.
+    # None of the four actual pinned tools (golangci-lint, govulncheck, modernize,
+    # gotestsum) import any of these — they're artifacts of the replace trick — and
+    # the root go.mod entry above already tracks/bumps their real versions for real,
+    # so bumping them again here is pure duplication. This produced 5 separate
+    # ungrouped PRs (#2-#6) instead of one grouped PR like the root entry's #1.
+    #
+    # NOTE: `allow: dependency-type: direct` looks like the obvious fix but is
+    # actually wrong here and was verified (via `go list -m` against this exact
+    # file) NOT to work: because these noise packages are genuinely imported by the
+    # real repo source reachable through the replace, Go's own module-graph
+    # analysis classifies them as DIRECT requires of tools/go.mod — while the four
+    # real pinned tools end up INDIRECT (the `tool` directive alone doesn't confer
+    # direct status; nothing in tools/ literally imports golangci-lint's packages).
+    # An `allow: direct` restriction would therefore keep proposing updates for
+    # exactly the noise causing the flood while suppressing genuine tool-version
+    # bumps — the opposite of what's needed. Ignoring the noise packages by name is
+    # the mechanism that actually addresses the root cause regardless of their
+    # direct/indirect classification (a known rough area for Go in dependabot-core,
+    # see dependabot/dependabot-core#9370 and related grouping issues).
+    ignore:
+      - dependency-name: "github.com/aws/aws-sdk-go-v2*"
+      - dependency-name: "github.com/aws/smithy-go"
+      - dependency-name: "github.com/blackbirdworks/gopherstack"
+      - dependency-name: "github.com/google/uuid"
+      - dependency-name: "github.com/jh125486/godynamo"
+      - dependency-name: "github.com/testcontainers/testcontainers-go"
     groups:
       all-dependencies:
         patterns:
