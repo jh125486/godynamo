@@ -356,4 +356,24 @@ func TestIntegration_EndToEnd(t *testing.T) {
 			t.Fatalf("unexpected item from TransactGet: %+v", got)
 		}
 	})
+
+	t.Run("Statement", func(t *testing.T) {
+		p := &Product{Name: "PartiQL'd", Price: 7}
+		if err := godynamo.Put(ctx, db, p); err != nil {
+			t.Fatalf("Put: %v", err)
+		}
+
+		pk, sk := godynamo.Keys(p)
+		stmt := fmt.Sprintf(`SELECT * FROM %q WHERE PK = ? AND SK = ?`, table)
+		items, err := godynamo.Statement[Product](ctx, db, stmt, pk, sk).All()
+		if err != nil {
+			t.Fatalf("Statement.All: %v", err)
+		}
+		if len(items) != 1 {
+			t.Fatalf("expected 1 item from Statement.All, got %d", len(items))
+		}
+		if items[0].ID != p.ID || items[0].Name != "PartiQL'd" || items[0].Price != 7 {
+			t.Fatalf("unexpected item from Statement.All: %+v", items[0])
+		}
+	})
 }

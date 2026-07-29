@@ -111,6 +111,32 @@ type Order struct {
 `PK(v)`, `SK(v)`, and `Keys(v)` compute these strings directly from a struct
 value (or pointer) for callers that need a raw key, e.g. for `WherePK`.
 
+## Raw PartiQL with `Statement`
+
+`Statement[T]` is a raw-PartiQL escape hatch for callers who want SQL-like
+`SELECT` semantics, or a query shape the fluent `Query[T]` builder can't
+express. Unlike `Query`, it has no type-index/base-table mode distinction —
+you write the whole statement (including the table name) yourself:
+
+```go
+items, err := godynamo.Statement[Task](ctx, db,
+	`SELECT * FROM "my-table" WHERE PK = ? AND SK = ?`,
+	godynamo.PK(&Task{Project: "roadmap"}), "Task#open#"+task.ID.String(),
+).All()
+```
+
+`params` are positional values for the statement's `?` placeholders,
+marshaled individually (not as a struct-to-map). `.Limit(n)` and
+`.ConsistentRead(v)` set the matching `ExecuteStatementInput` fields —
+`ConsistentRead` is PartiQL-specific and has no `Query`/`Scan` equivalent.
+`.All()` paginates to exhaustion using DynamoDB's own opaque `NextToken`
+(no cursor encoding needed); `.Page(cursor)` runs a single call and hands
+that token back to the caller as-is.
+
+Only PartiQL `SELECT` is supported — PartiQL writes, `BatchExecuteStatement`,
+and `ExecuteTransaction` are out of scope; use `Put`/`Update`/`Delete`,
+`BatchWrite`, and `TransactWrite` instead.
+
 ## The type-index GSI
 
 Type-index queries (`Query[T](ctx, db)` with no `WherePK` call) list every
@@ -137,6 +163,8 @@ Creating the table and index is out of scope for this package; see
 - **Transact**: `TransactGet`/`TransactWrite` for heterogeneous, atomic
   multi-item reads and writes (`Put`/`Delete`/`ConditionCheck`), with
   `ErrOptimisticLock` translated from `TransactionCanceledException`.
+- **Statement**: `Statement[T]`, a raw-PartiQL `SELECT` escape hatch with
+  `Limit`, `ConsistentRead`, exhaustive `All()`, and token-based `Page(cursor)`.
 
 ## Known limitations
 

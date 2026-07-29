@@ -79,6 +79,7 @@ type stubClient struct {
 	batchWriteItemFn     func(ctx context.Context, in *dynamodb.BatchWriteItemInput) (*dynamodb.BatchWriteItemOutput, error)
 	transactGetItemsFn   func(ctx context.Context, in *dynamodb.TransactGetItemsInput) (*dynamodb.TransactGetItemsOutput, error)
 	transactWriteItemsFn func(ctx context.Context, in *dynamodb.TransactWriteItemsInput) (*dynamodb.TransactWriteItemsOutput, error)
+	executeStatementFn   func(ctx context.Context, in *dynamodb.ExecuteStatementInput) (*dynamodb.ExecuteStatementOutput, error)
 }
 
 func (s *stubClient) GetItem(ctx context.Context, in *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
@@ -119,6 +120,10 @@ func (s *stubClient) TransactGetItems(ctx context.Context, in *dynamodb.Transact
 
 func (s *stubClient) TransactWriteItems(ctx context.Context, in *dynamodb.TransactWriteItemsInput, _ ...func(*dynamodb.Options)) (*dynamodb.TransactWriteItemsOutput, error) {
 	return s.transactWriteItemsFn(ctx, in)
+}
+
+func (s *stubClient) ExecuteStatement(ctx context.Context, in *dynamodb.ExecuteStatementInput, _ ...func(*dynamodb.Options)) (*dynamodb.ExecuteStatementOutput, error) {
+	return s.executeStatementFn(ctx, in)
 }
 
 var fixedNow = time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)

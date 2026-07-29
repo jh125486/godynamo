@@ -13,7 +13,13 @@ const defaultGSI1Name = "GSI1"
 
 // dynamoAPI is the narrow subset of *dynamodb.Client this package needs. It
 // exists so tests can substitute a hand-written stub instead of talking to
-// real AWS/DynamoDB Local.
+// real AWS/DynamoDB Local. Its size tracks the number of distinct DynamoDB
+// operations godynamo wraps (one method added per operation, one operation
+// per exported builder/verb) — splitting it would reduce cohesion for no
+// benefit, so the linter's generic method-count default is silenced here
+// rather than worked around.
+//
+//nolint:interfacebloat // one method per wrapped DynamoDB operation; see comment above.
 type dynamoAPI interface {
 	GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
 	PutItem(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
@@ -33,6 +39,9 @@ type dynamoAPI interface {
 	TransactWriteItems(
 		ctx context.Context, params *dynamodb.TransactWriteItemsInput, optFns ...func(*dynamodb.Options),
 	) (*dynamodb.TransactWriteItemsOutput, error)
+	ExecuteStatement(
+		ctx context.Context, params *dynamodb.ExecuteStatementInput, optFns ...func(*dynamodb.Options),
+	) (*dynamodb.ExecuteStatementOutput, error)
 }
 
 // DB wraps a DynamoDB client plus the single-table-design config (table
