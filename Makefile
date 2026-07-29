@@ -1,4 +1,4 @@
-.PHONY: help init deps-update test tidy static lint lint-update vuln-check modernize outdated fmt vet check integration-test
+.PHONY: help init deps-update update-tools update-pkgs test tidy static lint vuln-check modernize fmt vet check integration-test
 .DEFAULT_GOAL := help
 
 ## help: Show this help message
@@ -6,28 +6,39 @@ help:
 	@echo "Available targets:"
 	@sed -n 's/^##//p' $(MAKEFILE_LIST) | column -t -s ':' | sed -e 's/^/ /'
 
-## init: Initialize development environment (goimports)
-init:
-	@echo "Initializing development environment..."
-	@go install golang.org/x/tools/cmd/goimports@latest
+## init: Bootstrap pinned dev tool binaries (golangci-lint, govulncheck, modernize, gotestsum)
+init: update-tools
 	@echo "Development environment initialized ✓"
 
-## deps-update: Update golangci-lint and Go module dependencies
-deps-update: lint-update
-	@echo "Updating Go modules to latest versions..."
+## deps-update: Update dev tools and Go module dependencies to latest
+deps-update: update-tools update-pkgs
+
+## update-tools: Update golangci-lint, govulncheck, modernize, and gotestsum to latest
+update-tools:
+	@echo "Updating dev tools..."
+	@go get -tool -modfile=tools.mod github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+	@go get -tool -modfile=tools.mod golang.org/x/vuln/cmd/govulncheck@latest
+	@go get -tool -modfile=tools.mod golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest
+	@go get -tool -modfile=tools.mod gotest.tools/gotestsum@latest
+	@go mod tidy -modfile=tools.mod
+	@echo "Dev tools updated ✓"
+
+## update-pkgs: Update Go module dependencies to latest versions
+update-pkgs:
+	@echo "Updating Go module dependencies..."
 	@go get -u -t ./...
 	@go mod tidy
-	@echo "Go modules updated ✓"
+	@echo "Go module dependencies updated ✓"
 
 ## test: Run all unit tests with coverage
 test:
 	@echo "Running tests..."
-	@go test -timeout 30s -shuffle=on -race -cover -coverprofile=coverage.out ./...
+	@go tool -modfile=tools.mod gotestsum --format testname -- -timeout 30s -shuffle=on -race -cover -coverprofile=coverage.out ./...
 
 ## integration-test: Run integration tests against a real DynamoDB-compatible backend (requires Docker)
 integration-test:
 	@echo "Running integration tests..."
-	@go test -tags=integration -race -v ./...
+	@go tool -modfile=tools.mod gotestsum --format testname -- -tags=integration -race -v ./...
 
 ## tidy: Tidy Go modules
 tidy:
@@ -36,39 +47,28 @@ tidy:
 	@echo "Go modules tidied ✓"
 
 ## static: Run all linting tools
-static: tidy vet lint modernize vuln-check outdated
+static: tidy vet lint modernize vuln-check
 	@echo "All linting completed ✓"
 
 ## lint: Run golangci-lint with auto-fix enabled
 lint:
-	@echo "Running $$(go tool -modfile=golangci-lint.mod golangci-lint version)..."
-	@go tool -modfile=golangci-lint.mod golangci-lint run --fix ./...
+	@echo "Running $$(go tool -modfile=tools.mod golangci-lint version)..."
+	@go tool -modfile=tools.mod golangci-lint run --fix ./...
 
-## lint-update: Update golangci-lint to latest version
-lint-update:
-	@echo "Updating golangci-lint..."
-	@go get -tool -modfile=golangci-lint.mod github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
-	@go mod tidy -modfile=golangci-lint.mod
-	@echo "Updated $$(go tool -modfile=golangci-lint.mod golangci-lint version)"
-
+## vuln-check: Check for known vulnerabilities in dependencies
 vuln-check:
 	@echo "Checking for vulnerabilities..."
-	@go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+	@go tool -modfile=tools.mod govulncheck ./...
 
 ## modernize: Check for outdated Go patterns and suggest improvements
 modernize:
 	@echo "Running modernize analysis..."
-	@go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -fix -test ./...
-
-outdated:
-	@echo "Checking for outdated direct dependencies..."
-	@go list -u -m -f '{{if not .Indirect}}{{.}}{{end}}' all 2>/dev/null | grep '\[' || echo "All direct dependencies are up to date"
+	@go tool -modfile=tools.mod modernize -fix -test ./...
 
 ## fmt: Format code
 fmt:
 	@echo "Formatting code..."
 	@go fmt ./...
-	@go run golang.org/x/tools/cmd/goimports@latest -w .
 
 ## vet: Run go vet
 vet:
