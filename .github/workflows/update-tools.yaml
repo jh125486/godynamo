@@ -1,0 +1,44 @@
+name: update-tools
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # weekly, Monday 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Update pinned dev tools
+        run: make update-tools
+
+      - name: Open PR if tools.mod/tools.sum changed
+        uses: peter-evans/create-pull-request@v8
+        with:
+          commit-message: "chore(tools): update pinned dev tool versions"
+          title: "chore(tools): update pinned dev tool versions"
+          body: |
+            Automated update of tools.mod-pinned dev tools (golangci-lint, govulncheck,
+            modernize, gotestsum) via `make update-tools`.
+
+            tools.mod is intentionally isolated from go.mod so a bad upstream tool release
+            can't break production builds — review the diff and let CI (the `test` workflow's
+            lint/vuln-check-adjacent steps, and this PR's own required status check) pass
+            before merging.
+          branch: chore/update-tools
+          delete-branch: true
+          add-paths: |
+            tools.mod
+            tools.sum

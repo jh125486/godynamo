@@ -6,8 +6,10 @@
 # NOTE: this repo also has a tools.mod (Go 1.24+ `tool` directive pinning file for
 # golangci-lint/govulncheck/modernize/gotestsum). Dependabot's `gomod` ecosystem only
 # looks for a file literally named `go.mod` in `directory` and has no supported way to
-# point at a differently-named go.mod-style file, so tools.mod is NOT covered here and
-# will not receive automatic update PRs. Run `make update-tools` periodically instead.
+# point at a differently-named go.mod-style file, so tools.mod is NOT covered by this
+# file. Instead, .github/workflows/update-tools.yaml runs `make update-tools` on a
+# weekly schedule (and on manual dispatch) and opens a PR when tools.mod/tools.sum
+# change — a hand-rolled Dependabot-equivalent scoped to just that one file pair.
 
 version: 2
 updates:
