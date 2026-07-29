@@ -11,11 +11,16 @@ import (
 // Task is a small single-table-design entity. It embeds [godynamo.Model]
 // with no dynamo tag, so it uses the default (ID-only) PK/SK
 // ("Task#{ID}"/"Task#{ID}") and is discoverable via Query's type-index mode.
+//
+// Notes is tagged `dynamo:"compress"`: it's transparently gzip-compressed
+// on write and decompressed on read, since it can be a large free-text blob
+// -- see the "The compress tag" section of README.md.
 type Task struct {
 	godynamo.Model
 	Project string
 	Status  string
 	Title   string
+	Notes   string `dynamo:"compress"`
 }
 
 // Example demonstrates constructing a *godynamo.DB and the fluent call
@@ -39,10 +44,34 @@ func Example() {
 
 	db := godynamo.New(client, "my-table")
 
-	task := &Task{Project: "roadmap", Status: "open", Title: "Write README"}
+	task := &Task{Project: "roadmap", Status: "open", Title: "Write README", Notes: "Needs a section on compression."}
 	if err := godynamo.Put(ctx, db, task); err != nil {
 		panic(err)
 	}
+	// Put writes an item shaped roughly like this (a simplified/logical
+	// illustration of the item's values -- NOT DynamoDB's literal
+	// {"S": "..."}-style typed wire format):
+	//
+	//	{
+	//	  "PK":        "Task#5b1f...",       // godynamo.PK(task)
+	//	  "SK":        "Task#5b1f...",       // godynamo.SK(task)
+	//	  "GSI1PK":    "Task",                // set on create; drives Query's type-index mode
+	//	  "ID":        "5b1f...",
+	//	  "Type":      "Task",
+	//	  "Project":   "roadmap",
+	//	  "Status":    "open",
+	//	  "Title":     "Write README",
+	//	  "Notes":     "<gzip-compressed JSON, shown decompressed here for illustration>",
+	//	  "CreatedAt": "2026-07-28T15:04:05Z",
+	//	  "CreatedBy": "",
+	//	  "UpdatedAt": "2026-07-28T15:04:05Z",
+	//	  "UpdatedBy": "",
+	//	  "Version":   1
+	//	}
+	//
+	// Notes is stored as DynamoDB Binary (gzip-compressed JSON), not a
+	// plain string, because of its `dynamo:"compress"` tag -- see the
+	// "The compress tag" section of README.md.
 
 	got, err := godynamo.Get[Task](ctx, db, task.ID)
 	if err != nil {

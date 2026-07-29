@@ -33,12 +33,16 @@ import (
 )
 
 // Task embeds godynamo.Model with no dynamo tag, so it uses the default
-// (ID-only) PK/SK and is discoverable via Query's type-index mode.
+// (ID-only) PK/SK and is discoverable via Query's type-index mode. Notes is
+// tagged `dynamo:"compress"`: it's transparently gzip-compressed on write
+// and decompressed on read, since it can be a large free-text blob -- see
+// "The compress tag" below.
 type Task struct {
 	godynamo.Model
 	Project string
 	Status  string
 	Title   string
+	Notes   string `dynamo:"compress"`
 }
 
 func main() {
@@ -51,10 +55,33 @@ func main() {
 	client := dynamodb.NewFromConfig(cfg)
 	db := godynamo.New(client, "my-table")
 
-	task := &Task{Project: "roadmap", Status: "open", Title: "Write README"}
+	task := &Task{Project: "roadmap", Status: "open", Title: "Write README", Notes: "Needs a section on compression."}
 	if err := godynamo.Put(ctx, db, task); err != nil {
 		log.Fatal(err)
 	}
+	// Put writes an item shaped roughly like this. This is a
+	// simplified/logical illustration of the item's values -- NOT
+	// DynamoDB's literal {"S": "..."}-style typed wire format:
+	//
+	//	{
+	//	  "PK":        "Task#5b1f...",   // godynamo.PK(task)
+	//	  "SK":        "Task#5b1f...",   // godynamo.SK(task)
+	//	  "GSI1PK":    "Task",           // set on create; drives Query's type-index mode
+	//	  "ID":        "5b1f...",
+	//	  "Type":      "Task",
+	//	  "Project":   "roadmap",
+	//	  "Status":    "open",
+	//	  "Title":     "Write README",
+	//	  "Notes":     "<gzip-compressed JSON, shown decompressed here for illustration>",
+	//	  "CreatedAt": "2026-07-28T15:04:05Z",
+	//	  "CreatedBy": "",
+	//	  "UpdatedAt": "2026-07-28T15:04:05Z",
+	//	  "UpdatedBy": "",
+	//	  "Version":   1
+	//	}
+	//
+	// Notes is stored as DynamoDB Binary (gzip-compressed JSON), not a
+	// plain string, because of its `dynamo:"compress"` tag.
 
 	got, err := godynamo.Get[Task](ctx, db, task.ID)
 	if err != nil {
@@ -112,6 +139,45 @@ type Order struct {
 
 `PK(v)`, `SK(v)`, and `Keys(v)` compute these strings directly from a struct
 value (or pointer) for callers that need a raw key, e.g. for `WherePK`.
+
+## The `compress` tag
+
+Any field OTHER than the embedded `Model` field, on any struct embedding
+`Model`, can carry a `dynamo:"compress"` tag — a different tag *target* from
+the Model field's `pk:`/`sk:` clause grammar, with a simpler, bare-keyword
+syntax: the tag value, trimmed, must equal exactly `"compress"`.
+
+```go
+type Task struct {
+    godynamo.Model
+    Project string
+    Status  string
+    Notes   string `dynamo:"compress"`
+}
+```
+
+On write, instead of DynamoDB's native representation for the field's type,
+godynamo JSON-marshals the field's Go value, gzip-compresses the resulting
+bytes (`compress/gzip`, stdlib), and stores the compressed bytes as a
+DynamoDB Binary attribute under the field's normally-resolved attribute name
+(a `dynamodbav` tag on the same field still controls the name — the two tags
+are orthogonal). On read, this is reversed transparently: the Binary
+attribute is gunzipped, JSON-unmarshaled, and set back on the field — the
+caller never sees the compressed bytes. This works for any
+JSON-serializable Go field type (string, struct, slice, map, ...), not just
+strings.
+
+**Once a field is compressed, it's opaque binary in DynamoDB.** It can no
+longer be used in `Filter`, key conditions (`pk:`/`sk:` clauses, `WherePK`,
+`SKEquals`/`SKBeginsWith`/`SKBetween`), or `UpdateBuilder.Set`/`.Add`
+expressions — you can't query, sort, or update-in-place on a compressed
+field's contents. Don't tag a field you need to query, sort, or filter on.
+
+**gzip has fixed per-blob overhead (roughly 18-20 bytes).** Compressing a
+small or already-compact field can make it *larger*, not smaller. This is an
+opt-in optimization for genuinely large, JSON-serializable, low-query-need
+fields — large text blobs, nested documents, logs — not a blanket default
+for every string field.
 
 ## Raw PartiQL with `Statement`
 
@@ -173,6 +239,9 @@ out of scope for this package; see `integration_test.go` for a
   `ErrOptimisticLock` translated from `TransactionCanceledException`.
 - **Statement**: `Statement[T]`, a raw-PartiQL `SELECT` escape hatch with
   `Limit`, `ConsistentRead`, exhaustive `All()`, and token-based `Page(cursor)`.
+- **Compression**: `dynamo:"compress"` transparently gzip-compresses a
+  field's JSON representation on write and decompresses it on read — see
+  "The `compress` tag" above.
 
 ## Known limitations
 
@@ -197,3 +266,8 @@ out of scope for this package; see `integration_test.go` for a
   are queued rather than silently chunking — chunking a transaction would
   break its atomicity guarantee, so callers must keep transactions at or
   under AWS's 100-item limit themselves.
+- A `dynamo:"compress"` field is opaque binary in DynamoDB once written —
+  it cannot be used in `Filter`, key conditions, or `UpdateBuilder.Set`/`Add`
+  expressions. gzip also has fixed per-blob overhead (~18-20 bytes), so
+  compressing small fields can make them larger, not smaller — see "The
+  `compress` tag" above.
