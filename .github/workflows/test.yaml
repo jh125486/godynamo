@@ -31,3 +31,11 @@ jobs:
 
       - name: Run integration tests
         run: go test -tags=integration -v -race ./...
+
+      - name: Upload coverage reports to Codecov
+        if: always()
+        uses: codecov/codecov-action@v7
+        with:
+          files: ./coverage.out
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
