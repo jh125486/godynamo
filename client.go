@@ -8,7 +8,8 @@ import (
 )
 
 // defaultGSI1Name is the default name for the first global secondary index,
-// carried in DB config for use by later phases (queries).
+// carried in DB config and used by [Query]'s type-index mode (overridable
+// via [WithGSI1Name]).
 const defaultGSI1Name = "GSI1"
 
 // dynamoAPI is the narrow subset of *dynamodb.Client this package needs. It

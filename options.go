@@ -8,8 +8,9 @@ import (
 // Option configures a [DB] constructed by [New].
 type Option func(*DB)
 
-// WithGSI1Name overrides the default GSI1 index name ("GSI1"). Later phases
-// use this for queries; Phase 2 only carries the config.
+// WithGSI1Name overrides the default GSI1 index name ("GSI1"). It's used by
+// [Query]'s type-index mode, which queries this GSI for GSI1PK = the Go type
+// name of T.
 func WithGSI1Name(name string) Option {
 	return func(db *DB) {
 		db.gsi1Name = name

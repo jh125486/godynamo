@@ -1,10 +1,8 @@
 // Package godynamo is an opinionated, fluent, generics-based library for
 // modeling AWS DynamoDB single-table design in Go. It provides a common
 // embeddable [Model] base struct, struct-tag driven partition/sort key
-// generation, and (in later phases) generic CRUD/query helpers built on top
-// of the AWS SDK. Phase 1 covers only the pure, non-AWS core: the Model
-// struct, struct-tag parsing, and PK/SK key-building logic — everything is
-// testable with plain Go structs, with no network or SDK dependency.
+// generation, and generic CRUD/Query/Scan/Batch/Transact helpers built on
+// top of the AWS SDK for Go v2.
 package godynamo
 
 import (
@@ -28,8 +26,9 @@ type Model struct {
 	ID uuid.UUID
 
 	// Type is an entity discriminator, auto-set to the owning struct's type
-	// name (e.g. "User"). It is intended to double as a GSI partition key
-	// in a later phase.
+	// name (e.g. "User"). It also doubles as the GSI1 partition key:
+	// [stampAndMarshal] sets the "GSI1PK" attribute from it on create, which
+	// is what [Query]'s type-index mode queries against.
 	Type string
 
 	// CreatedAt records when the entity was first persisted.
@@ -42,8 +41,11 @@ type Model struct {
 	// UpdatedBy records who (or what) last modified the entity.
 	UpdatedBy string
 
-	// Version is an optimistic-locking counter. Phase 1 only defines the
-	// field; increment-on-write logic is implemented in a later phase.
+	// Version is an optimistic-locking counter. [Put] and [UpdateBuilder.Run]
+	// set it to 1 on create and increment it on every subsequent write,
+	// enforcing a Version = :expected ConditionExpression whenever the
+	// caller opts into the check (Put's re-Put path, or Update's
+	// [UpdateBuilder.IfVersion]).
 	Version int
 }
 
