@@ -80,6 +80,19 @@ func asOptimisticLockErr(err error, action, typeName string, id uuid.UUID) error
 // item's PK/SK are computed via [PK]/[SK] (after Type and the audit fields
 // are set, since key templates may reference sibling fields including
 // Type) and written under the literal attribute names "PK"/"SK".
+//
+// On the new-item path, Put also writes a "GSI1PK" attribute set to the
+// item's Type (the same struct-name string [SetType] stamps). Type is
+// immutable once set — Update never changes it — so re-Puts of existing
+// items don't need to touch GSI1PK again.
+//
+// For type-index queries ([Query] with no [QueryBuilder.WherePK] call) to
+// work, the DynamoDB table must have a GSI (default name "GSI1",
+// configurable via [WithGSI1Name]) with partition key GSI1PK (String) and
+// sort key SK (String) — the GSI reuses the base table's SK attribute as
+// its own range key, which is valid: a GSI's key schema may reference an
+// attribute the base table already writes. Creating the table/index is out
+// of scope for this package.
 func Put[T any](ctx context.Context, db *DB, item *T) error {
 	typeName := reflect.TypeFor[T]().Name()
 	mf := modelFieldOf(item)
@@ -89,7 +102,9 @@ func Put[T any](ctx context.Context, db *DB, item *T) error {
 	actor := db.actor(ctx)
 
 	var cond expression.ConditionBuilder
+	var newItem bool
 	if model.CreatedAt.IsZero() {
+		newItem = true
 		SetType(item)
 		mf.FieldByName("CreatedAt").Set(reflect.ValueOf(now))
 		mf.FieldByName("CreatedBy").SetString(actor)
@@ -119,6 +134,9 @@ func Put[T any](ctx context.Context, db *DB, item *T) error {
 	pk, sk := PK(item), SK(item)
 	av["PK"] = &types.AttributeValueMemberS{Value: pk}
 	av["SK"] = &types.AttributeValueMemberS{Value: sk}
+	if newItem {
+		av["GSI1PK"] = &types.AttributeValueMemberS{Value: typeName}
+	}
 
 	_, err = db.client.PutItem(ctx, &dynamodb.PutItemInput{
 		TableName:                 aws.String(db.table),

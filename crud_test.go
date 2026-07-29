@@ -26,6 +26,7 @@ type stubClient struct {
 	putFn    func(ctx context.Context, in *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error)
 	updateFn func(ctx context.Context, in *dynamodb.UpdateItemInput) (*dynamodb.UpdateItemOutput, error)
 	deleteFn func(ctx context.Context, in *dynamodb.DeleteItemInput) (*dynamodb.DeleteItemOutput, error)
+	queryFn  func(ctx context.Context, in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error)
 }
 
 func (s *stubClient) GetItem(ctx context.Context, in *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
@@ -42,6 +43,10 @@ func (s *stubClient) UpdateItem(ctx context.Context, in *dynamodb.UpdateItemInpu
 
 func (s *stubClient) DeleteItem(ctx context.Context, in *dynamodb.DeleteItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error) {
 	return s.deleteFn(ctx, in)
+}
+
+func (s *stubClient) Query(ctx context.Context, in *dynamodb.QueryInput, _ ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
+	return s.queryFn(ctx, in)
 }
 
 var fixedNow = time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
@@ -146,6 +151,9 @@ func TestPut_NewItem(t *testing.T) {
 	if got := attrS(t, captured.Item, "SK"); got != wantSK {
 		t.Errorf("Item[SK] = %q, want %q", got, wantSK)
 	}
+	if got := attrS(t, captured.Item, "GSI1PK"); got != "widget" {
+		t.Errorf("Item[GSI1PK] = %q, want %q", got, "widget")
+	}
 }
 
 func TestPut_ExistingItem(t *testing.T) {
@@ -210,6 +218,9 @@ func TestPut_ExistingItem(t *testing.T) {
 	}
 	if got := attrN(t, captured.Item, "Version"); got != "4" {
 		t.Errorf("Item[Version] = %q, want %q", got, "4")
+	}
+	if _, ok := captured.Item["GSI1PK"]; ok {
+		t.Errorf("Item[GSI1PK] = %v, want absent on re-Put of existing item", captured.Item["GSI1PK"])
 	}
 }
 
