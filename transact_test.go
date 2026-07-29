@@ -511,3 +511,51 @@ func TestCancellationReasonCodes_NilCode_MapsToNone(t *testing.T) {
 		t.Errorf("codes[1] = %q, want %q", codes[1], code)
 	}
 }
+
+// TestTransactGet_CompressedFieldSurvivesRoundTrip confirms
+// TransactGetBuilder.Run's heterogeneous, any-typed unmarshal path
+// (b.dsts[i]) is wired through unmarshalItemInto by round-tripping a
+// compressWidget (defined in compress_test.go) alongside a plain widget in
+// the same transaction.
+func TestTransactGet_CompressedFieldSurvivesRoundTrip(t *testing.T) {
+	wID := uuid.New()
+	wantWidget := widget{Model: Model{ID: wID, Type: "widget", CreatedAt: fixedNow, Version: 1}, Name: "gizmo"}
+	wantWidgetAV, err := attributevalue.MarshalMap(wantWidget)
+	if err != nil {
+		t.Fatalf("MarshalMap() error = %v", err)
+	}
+
+	cID := uuid.New()
+	wantCompressed := compressWidget{Model: Model{ID: cID, Type: "compressWidget", CreatedAt: fixedNow, Version: 1}, Name: "blob-holder", Notes: "a long compressible note"}
+	wantCompressedAV, err := marshalItem(&wantCompressed)
+	if err != nil {
+		t.Fatalf("marshalItem() error = %v", err)
+	}
+
+	db := testDB(&stubClient{
+		transactGetItemsFn: func(_ context.Context, _ *dynamodb.TransactGetItemsInput) (*dynamodb.TransactGetItemsOutput, error) {
+			return &dynamodb.TransactGetItemsOutput{
+				Responses: []types.ItemResponse{
+					{Item: wantWidgetAV},
+					{Item: wantCompressedAV},
+				},
+			}, nil
+		},
+	})
+
+	var gotWidget widget
+	var gotCompressed compressWidget
+	err = TransactGet(context.Background(), db).
+		Get(&gotWidget).
+		Get(&gotCompressed).
+		Run()
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if gotWidget.Name != wantWidget.Name {
+		t.Errorf("gotWidget.Name = %q, want %q", gotWidget.Name, wantWidget.Name)
+	}
+	if gotCompressed.Notes != wantCompressed.Notes {
+		t.Errorf("gotCompressed.Notes = %q, want %q", gotCompressed.Notes, wantCompressed.Notes)
+	}
+}

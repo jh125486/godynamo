@@ -792,6 +792,67 @@ func TestUpdate_Add_TaggedField_ResolvesToDynamodbavName(t *testing.T) {
 	}
 }
 
+// TestPut_Get_CompressedFieldSurvivesRoundTrip confirms stampAndMarshal and
+// Get are wired through marshalItem/unmarshalItemInto (not raw
+// attributevalue.MarshalMap/UnmarshalMap calls) by round-tripping a
+// compressWidget (defined in compress_test.go) whose Notes field is tagged
+// dynamo:"compress" through a real Put -> Get cycle against the stub client.
+func TestPut_Get_CompressedFieldSurvivesRoundTrip(t *testing.T) {
+	id := uuid.New()
+	item := &compressWidget{Model: Model{ID: id}, Name: "gizmo", Notes: "a fairly long compressible note about this gizmo"}
+
+	var stored map[string]types.AttributeValue
+	db := testDB(&stubClient{
+		putFn: func(_ context.Context, in *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) {
+			stored = in.Item
+			return &dynamodb.PutItemOutput{}, nil
+		},
+		getFn: func(_ context.Context, _ *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
+			return &dynamodb.GetItemOutput{Item: stored}, nil
+		},
+	})
+
+	if err := Put(context.Background(), db, item); err != nil {
+		t.Fatalf("Put() error = %v", err)
+	}
+	if _, ok := stored["Notes"].(*types.AttributeValueMemberB); !ok {
+		t.Fatalf("stored Notes attribute = %T, want *types.AttributeValueMemberB", stored["Notes"])
+	}
+
+	got, err := Get[compressWidget](context.Background(), db, id)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if got.Notes != item.Notes {
+		t.Errorf("Notes = %q, want %q", got.Notes, item.Notes)
+	}
+}
+
+// TestUpdate_CompressedFieldSurvivesRoundTrip confirms UpdateBuilder.Run is
+// wired through unmarshalItemInto.
+func TestUpdate_CompressedFieldSurvivesRoundTrip(t *testing.T) {
+	id := uuid.New()
+	want := compressWidget{Model: Model{ID: id}, Name: "gizmo", Notes: "updated compressible note"}
+	av, err := marshalItem(&want)
+	if err != nil {
+		t.Fatalf("marshalItem() error = %v", err)
+	}
+
+	db := testDB(&stubClient{
+		updateFn: func(_ context.Context, _ *dynamodb.UpdateItemInput) (*dynamodb.UpdateItemOutput, error) {
+			return &dynamodb.UpdateItemOutput{Attributes: av}, nil
+		},
+	})
+
+	got, err := Update[compressWidget](db, id).Set("Name", "gizmo").Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got.Notes != want.Notes {
+		t.Errorf("Notes = %q, want %q", got.Notes, want.Notes)
+	}
+}
+
 func TestUpdate_EmptyFieldName_BuildError(t *testing.T) {
 	id := uuid.New()
 	var called bool

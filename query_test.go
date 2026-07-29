@@ -738,3 +738,32 @@ func containsAnd(expr string) bool {
 	}
 	return false
 }
+
+// TestQuery_All_CompressedFieldSurvivesRoundTrip confirms QueryBuilder.All
+// is wired through unmarshalItemInto (not a raw attributevalue.UnmarshalMap)
+// by round-tripping a compressWidget (defined in compress_test.go) whose
+// Notes field is tagged dynamo:"compress".
+func TestQuery_All_CompressedFieldSurvivesRoundTrip(t *testing.T) {
+	item := compressWidget{Model: Model{ID: uuid.New(), Type: "compressWidget"}, Name: "gizmo", Notes: "a long compressible note"}
+	av, err := marshalItem(&item)
+	if err != nil {
+		t.Fatalf("marshalItem() error = %v", err)
+	}
+	if _, ok := av["Notes"].(*types.AttributeValueMemberB); !ok {
+		t.Fatalf("Notes attribute = %T, want *types.AttributeValueMemberB", av["Notes"])
+	}
+
+	db := testDB(&stubClient{
+		queryFn: func(_ context.Context, _ *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+			return &dynamodb.QueryOutput{Items: []map[string]types.AttributeValue{av}}, nil
+		},
+	})
+
+	got, err := Query[compressWidget](context.Background(), db).All()
+	if err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if len(got) != 1 || got[0].Notes != item.Notes {
+		t.Fatalf("All() = %+v, want a single item with Notes = %q", got, item.Notes)
+	}
+}

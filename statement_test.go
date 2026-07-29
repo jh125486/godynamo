@@ -286,3 +286,29 @@ func TestStatement_Page_UnmarshalError(t *testing.T) {
 		t.Fatal("Page() expected unmarshal error, got nil")
 	}
 }
+
+// TestStatement_All_CompressedFieldSurvivesRoundTrip confirms
+// StatementBuilder.All is wired through unmarshalItemInto (not a raw
+// attributevalue.UnmarshalMap) by round-tripping a compressWidget (defined
+// in compress_test.go) whose Notes field is tagged dynamo:"compress".
+func TestStatement_All_CompressedFieldSurvivesRoundTrip(t *testing.T) {
+	item := compressWidget{Model: Model{ID: uuid.New(), Type: "compressWidget"}, Name: "gizmo", Notes: "a long compressible note"}
+	av, err := marshalItem(&item)
+	if err != nil {
+		t.Fatalf("marshalItem() error = %v", err)
+	}
+
+	db := testDB(&stubClient{
+		executeStatementFn: func(_ context.Context, _ *dynamodb.ExecuteStatementInput) (*dynamodb.ExecuteStatementOutput, error) {
+			return &dynamodb.ExecuteStatementOutput{Items: []map[string]types.AttributeValue{av}}, nil
+		},
+	})
+
+	got, err := Statement[compressWidget](context.Background(), db, `SELECT * FROM "widgets"`).All()
+	if err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if len(got) != 1 || got[0].Notes != item.Notes {
+		t.Fatalf("All() = %+v, want a single item with Notes = %q", got, item.Notes)
+	}
+}

@@ -126,7 +126,7 @@ func (b *StatementBuilder[T]) All() ([]T, error) {
 		}
 		for _, av := range out.Items {
 			var item T
-			if err := attributevalue.UnmarshalMap(av, &item); err != nil {
+			if err := unmarshalItemInto(av, &item); err != nil {
 				return nil, fmt.Errorf("godynamo: unmarshal %s: %w", typeName, err)
 			}
 			items = append(items, item)
@@ -163,7 +163,7 @@ func (b *StatementBuilder[T]) Page(cursor string) (items []T, nextCursor string,
 	items = make([]T, 0, len(out.Items))
 	for _, av := range out.Items {
 		var item T
-		if err := attributevalue.UnmarshalMap(av, &item); err != nil {
+		if err := unmarshalItemInto(av, &item); err != nil {
 			return nil, "", fmt.Errorf("godynamo: unmarshal %s: %w", typeName, err)
 		}
 		items = append(items, item)

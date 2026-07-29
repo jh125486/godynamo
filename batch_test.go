@@ -482,3 +482,34 @@ func TestBatchWrite_ClientError(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 }
+
+// TestBatchGet_CompressedFieldSurvivesRoundTrip confirms
+// BatchGetBuilder.runChunk is wired through unmarshalItemInto (not a raw
+// attributevalue.UnmarshalMap) by round-tripping a compressWidget (defined
+// in compress_test.go) whose Notes field is tagged dynamo:"compress".
+func TestBatchGet_CompressedFieldSurvivesRoundTrip(t *testing.T) {
+	id := uuid.New()
+	item := compressWidget{Model: Model{ID: id, Type: "compressWidget"}, Name: "gizmo", Notes: "a long compressible note"}
+	av, err := marshalItem(&item)
+	if err != nil {
+		t.Fatalf("marshalItem() error = %v", err)
+	}
+
+	db := testDB(&stubClient{
+		batchGetItemFn: func(_ context.Context, _ *dynamodb.BatchGetItemInput) (*dynamodb.BatchGetItemOutput, error) {
+			return &dynamodb.BatchGetItemOutput{
+				Responses: map[string][]map[string]types.AttributeValue{
+					"test-table": {av},
+				},
+			}, nil
+		},
+	})
+
+	got, err := BatchGet[compressWidget](context.Background(), db).IDs(id).Run()
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(got) != 1 || got[0].Notes != item.Notes {
+		t.Fatalf("Run() = %+v, want a single item with Notes = %q", got, item.Notes)
+	}
+}

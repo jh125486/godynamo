@@ -190,3 +190,38 @@ func TestSplitFields(t *testing.T) {
 		t.Fatalf("splitFields = %v, want %v", got, want)
 	}
 }
+
+// internalCompressFixture exercises parseTags' compressFields detection: Blob
+// is tagged `dynamo:"compress"` and must be picked up; Name has no dynamo tag
+// at all; Malformed carries an unrelated/malformed dynamo tag value that must
+// NOT be treated as a compress marker.
+type internalCompressFixture struct {
+	Model      `dynamo:"pk:Name"`
+	Name       string
+	Blob       string `dynamo:"compress"`
+	Malformed  string `dynamo:"pk:Name"`
+	Whitespace string `dynamo:" compress "`
+}
+
+func TestParseTags_CompressFields(t *testing.T) {
+	mt := parseTags(reflect.TypeFor[internalCompressFixture]())
+
+	want := []string{"Blob", "Whitespace"}
+	if !reflect.DeepEqual(mt.compressFields, want) {
+		t.Fatalf("compressFields = %v, want %v", mt.compressFields, want)
+	}
+}
+
+// internalNoCompressFixture has no dynamo:"compress" fields at all, so
+// compressFields must stay nil (the zero value, not an empty non-nil slice).
+type internalNoCompressFixture struct {
+	Model
+	Name string
+}
+
+func TestParseTags_NoCompressFields_IsNil(t *testing.T) {
+	mt := parseTags(reflect.TypeFor[internalNoCompressFixture]())
+	if mt.compressFields != nil {
+		t.Fatalf("compressFields = %v, want nil", mt.compressFields)
+	}
+}

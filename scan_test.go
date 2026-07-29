@@ -587,3 +587,29 @@ func TestScan_SingleSegment_NoParallelCall_LeavesSegmentUnset(t *testing.T) {
 		t.Errorf("Segment/TotalSegments = %v/%v, want both nil for Parallel(1)", captured.Segment, captured.TotalSegments)
 	}
 }
+
+// TestScan_All_CompressedFieldSurvivesRoundTrip confirms scanSegment is
+// wired through unmarshalItemInto (not a raw attributevalue.UnmarshalMap)
+// by round-tripping a compressWidget (defined in compress_test.go) whose
+// Notes field is tagged dynamo:"compress".
+func TestScan_All_CompressedFieldSurvivesRoundTrip(t *testing.T) {
+	item := compressWidget{Model: Model{ID: uuid.New(), Type: "compressWidget"}, Name: "gizmo", Notes: "a long compressible note"}
+	av, err := marshalItem(&item)
+	if err != nil {
+		t.Fatalf("marshalItem() error = %v", err)
+	}
+
+	db := testDB(&stubClient{
+		scanFn: func(_ context.Context, _ *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
+			return &dynamodb.ScanOutput{Items: []map[string]types.AttributeValue{av}}, nil
+		},
+	})
+
+	got, err := Scan[compressWidget](context.Background(), db).All()
+	if err != nil {
+		t.Fatalf("All() error = %v", err)
+	}
+	if len(got) != 1 || got[0].Notes != item.Notes {
+		t.Fatalf("All() = %+v, want a single item with Notes = %q", got, item.Notes)
+	}
+}

@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -114,7 +113,7 @@ func (b *TransactGetBuilder) Run() error {
 		if len(item) == 0 {
 			continue // no such key; leave dst untouched, per doc comment above.
 		}
-		if err := attributevalue.UnmarshalMap(item, b.dsts[i]); err != nil {
+		if err := unmarshalItemInto(item, b.dsts[i]); err != nil {
 			return fmt.Errorf("godynamo: transact get: unmarshal item %d: %w", i, err)
 		}
 	}

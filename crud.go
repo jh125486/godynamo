@@ -7,7 +7,6 @@ import (
 	"reflect"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -150,7 +149,7 @@ func stampAndMarshal(
 		cond = expression.Name("Version").Equal(expression.Value(expectedVersion))
 	}
 
-	av, err = attributevalue.MarshalMap(item)
+	av, err = marshalItem(item)
 	if err != nil {
 		return nil, cond, fmt.Errorf("godynamo: marshaling %s (id=%s): %w", typeName, model.ID, err)
 	}
@@ -253,7 +252,7 @@ func Get[T any](ctx context.Context, db *DB, id uuid.UUID) (*T, error) {
 	}
 
 	var item T
-	if err := attributevalue.UnmarshalMap(out.Item, &item); err != nil {
+	if err := unmarshalItemInto(out.Item, &item); err != nil {
 		return nil, fmt.Errorf("godynamo: unmarshal %s (id=%s): %w", typeName, id, err)
 	}
 	return &item, nil
@@ -400,7 +399,7 @@ func (b *UpdateBuilder[T]) Run(ctx context.Context) (*T, error) {
 	}
 
 	var item T
-	if err := attributevalue.UnmarshalMap(out.Attributes, &item); err != nil {
+	if err := unmarshalItemInto(out.Attributes, &item); err != nil {
 		return nil, fmt.Errorf("godynamo: unmarshal %s (id=%s): %w", typeName, b.id, err)
 	}
 	return &item, nil

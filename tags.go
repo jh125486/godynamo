@@ -44,12 +44,21 @@ const (
 	idFieldName = "ID"
 )
 
+// compressTagValue is the exact (trimmed) `dynamo` tag value that marks a
+// field for transparent gzip compression. Unlike the Model field's
+// `pk:`/`sk:` clause grammar, this is a different tag *target* (any field
+// OTHER than the embedded Model field) with a simpler, bare-keyword
+// grammar — see the "The compress tag" section of README.md.
+const compressTagValue = "compress"
+
 // modelTags holds the parsed pk/sk field-name lists for a struct type, plus
-// the struct's own type name (used as the key template prefix).
+// the struct's own type name (used as the key template prefix) and the list
+// of fields marked `dynamo:"compress"`.
 type modelTags struct {
-	structName string
-	pkFields   []string // nil => no explicit pk clause; caller applies default.
-	skFields   []string // nil => no explicit sk clause; caller applies default.
+	structName     string
+	pkFields       []string // nil => no explicit pk clause; caller applies default.
+	skFields       []string // nil => no explicit sk clause; caller applies default.
+	compressFields []string // Go field names tagged `dynamo:"compress"`.
 }
 
 // tagCache caches parsed modelTags per struct reflect.Type so the (small)
@@ -71,31 +80,60 @@ func parseTags(t reflect.Type) *modelTags {
 	}
 
 	mt := &modelTags{structName: t.Name()}
-
-	tag, ok := field.Tag.Lookup(tagKey)
-	if ok && strings.TrimSpace(tag) != "" {
-		for clause := range strings.SplitSeq(tag, clauseSep) {
-			clause = strings.TrimSpace(clause)
-			if clause == "" {
-				continue
-			}
-			key, val, found := strings.Cut(clause, kvSep)
-			if !found {
-				continue
-			}
-			key = strings.TrimSpace(key)
-			fields := splitFields(val)
-			switch key {
-			case pkClauseKey:
-				mt.pkFields = fields
-			case skClauseKey:
-				mt.skFields = fields
-			}
-		}
-	}
+	parseModelClauses(mt, &field)
+	mt.compressFields = parseCompressFields(t)
 
 	actual, _ := tagCache.LoadOrStore(t, mt)
 	return actual.(*modelTags)
+}
+
+// parseModelClauses parses the embedded Model field's `dynamo` tag (its
+// pk:/sk: clauses) into mt.pkFields/mt.skFields.
+func parseModelClauses(mt *modelTags, field *reflect.StructField) {
+	tag, ok := field.Tag.Lookup(tagKey)
+	if !ok || strings.TrimSpace(tag) == "" {
+		return
+	}
+	for clause := range strings.SplitSeq(tag, clauseSep) {
+		clause = strings.TrimSpace(clause)
+		if clause == "" {
+			continue
+		}
+		key, val, found := strings.Cut(clause, kvSep)
+		if !found {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		fields := splitFields(val)
+		switch key {
+		case pkClauseKey:
+			mt.pkFields = fields
+		case skClauseKey:
+			mt.skFields = fields
+		}
+	}
+}
+
+// parseCompressFields scans every field of t OTHER than the embedded Model
+// field for a `dynamo:"compress"` tag, returning the Go field names (in
+// declaration order) of those that carry it.
+func parseCompressFields(t reflect.Type) []string {
+	modelType := reflect.TypeFor[Model]()
+	var compressFields []string
+	for i := range t.NumField() {
+		sf := t.Field(i)
+		if sf.Type == modelType {
+			continue // the embedded Model field itself; handled separately.
+		}
+		val, ok := sf.Tag.Lookup(tagKey)
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(val) == compressTagValue {
+			compressFields = append(compressFields, sf.Name)
+		}
+	}
+	return compressFields
 }
 
 // splitFields splits a comma-separated clause value into trimmed,

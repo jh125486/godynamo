@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/google/uuid"
@@ -124,7 +123,7 @@ func (b *BatchGetBuilder[T]) runChunk(keys []map[string]types.AttributeValue) ([
 
 		for _, av := range out.Responses[b.db.table] {
 			var item T
-			if err := attributevalue.UnmarshalMap(av, &item); err != nil {
+			if err := unmarshalItemInto(av, &item); err != nil {
 				return nil, fmt.Errorf("unmarshal: %w", err)
 			}
 			items = append(items, item)

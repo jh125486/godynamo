@@ -14,8 +14,10 @@ package godynamo_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -151,6 +153,14 @@ type TaggedItem struct {
 	godynamo.Model
 	Nickname string `dynamodbav:"nick_name"`
 	Score    int
+}
+
+// CompressibleDoc exercises dynamo:"compress" end-to-end: Notes is
+// transparently gzip-compressed on write and decompressed on read.
+type CompressibleDoc struct {
+	godynamo.Model
+	Title string
+	Notes string `dynamo:"compress"`
 }
 
 // TestIntegration_EndToEnd walks the full godynamo surface against a real
@@ -470,5 +480,69 @@ func TestIntegration_EndToEnd(t *testing.T) {
 		if items[0].ID != p.ID || items[0].Name != "PartiQL'd" || items[0].Price != 7 {
 			t.Fatalf("unexpected item from Statement.All: %+v", items[0])
 		}
+	})
+
+	t.Run("CompressTag", func(t *testing.T) {
+		// A long, repetitive string: gzip needs redundancy to actually
+		// shrink something, so this isn't just random/high-entropy text.
+		notes := strings.Repeat(
+			"The quick brown fox jumps over the lazy dog. godynamo's dynamo:\"compress\" tag saves space. ",
+			200,
+		)
+
+		doc := &CompressibleDoc{Title: "Compressible", Notes: notes}
+		if err := godynamo.Put(ctx, db, doc); err != nil {
+			t.Fatalf("Put: %v", err)
+		}
+
+		// Round-trip correctness: Get must return the original,
+		// decompressed value transparently.
+		got, err := godynamo.Get[CompressibleDoc](ctx, db, doc.ID)
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if got.Notes != notes {
+			t.Fatalf("Get: Notes did not round-trip correctly (len got=%d, want=%d)", len(got.Notes), len(notes))
+		}
+		if got.Title != "Compressible" {
+			t.Fatalf("Get: Title = %q, want %q", got.Title, "Compressible")
+		}
+
+		// Actual size reduction: fetch the raw stored item directly (not
+		// through godynamo's Get, which would decompress it) and inspect
+		// the Notes attribute's real shape and byte length.
+		pk, sk := godynamo.Keys(doc)
+		raw, err := client.GetItem(ctx, &dynamodb.GetItemInput{
+			TableName: aws.String(table),
+			Key: map[string]types.AttributeValue{
+				"PK": &types.AttributeValueMemberS{Value: pk},
+				"SK": &types.AttributeValueMemberS{Value: sk},
+			},
+		})
+		if err != nil {
+			t.Fatalf("raw GetItem: %v", err)
+		}
+
+		notesAttr, ok := raw.Item["Notes"].(*types.AttributeValueMemberB)
+		if !ok {
+			t.Fatalf("raw Notes attribute = %T, want *types.AttributeValueMemberB (Binary)", raw.Item["Notes"])
+		}
+
+		uncompressedJSON, err := json.Marshal(notes)
+		if err != nil {
+			t.Fatalf("json.Marshal(notes): %v", err)
+		}
+
+		if len(notesAttr.Value) >= len(uncompressedJSON) {
+			t.Fatalf(
+				"compression did not reduce size: stored Binary attribute is %d bytes, uncompressed JSON would be %d bytes",
+				len(notesAttr.Value), len(uncompressedJSON),
+			)
+		}
+		t.Logf(
+			"CompressTag: uncompressed JSON = %d bytes, stored (compressed) = %d bytes (%.1f%% of original)",
+			len(uncompressedJSON), len(notesAttr.Value),
+			100*float64(len(notesAttr.Value))/float64(len(uncompressedJSON)),
+		)
 	})
 }
