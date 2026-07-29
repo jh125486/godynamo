@@ -1,5 +1,6 @@
 # godynamo
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/jh125486/godynamo)](https://pkg.go.dev/github.com/jh125486/godynamo)
 [![Tests](https://github.com/jh125486/godynamo/actions/workflows/test.yaml/badge.svg)](https://github.com/jh125486/godynamo/actions/workflows/test.yaml)
 [![CodeQL](https://github.com/jh125486/godynamo/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/jh125486/godynamo/actions/workflows/codeql-analysis.yml)
 [![Codecov](https://codecov.io/gh/jh125486/godynamo/branch/main/graph/badge.svg)](https://codecov.io/gh/jh125486/godynamo)
