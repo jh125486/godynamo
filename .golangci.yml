@@ -1,0 +1,121 @@
+version: "2"
+
+run:
+  go: "1.26"
+  tests: true
+  timeout: 5m
+  build-tags:
+    - integration
+  allow-parallel-runners: true
+
+output:
+  show-stats: true
+
+linters:
+  enable:
+    - asasalint
+    - bodyclose
+    - copyloopvar
+    - dupl
+    - errcheck
+    - errorlint
+    - exhaustive
+    - funlen
+    - gochecknoglobals
+    - gochecknoinits
+    - gocognit
+    - goconst
+    - gocritic
+    - gocyclo
+    - godox
+    - gomodguard_v2
+    - goprintffuncname
+    - gosec
+    - govet
+    - ineffassign
+    - interfacebloat
+    - lll
+    - loggercheck
+    - makezero
+    - nakedret
+    - nestif
+    - nilnil
+    - noctx
+    - nolintlint
+    - prealloc
+    - predeclared
+    - reassign
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - sloglint
+    - staticcheck
+    - tagalign
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
+    - unused
+    - usetesting
+    - wastedassign
+    - whitespace
+
+  settings:
+    funlen:
+      lines: 150
+      statements: 70
+      ignore-comments: true
+    gocognit:
+      min-complexity: 20
+    goconst:
+      ignore-tests: true
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+    gocyclo:
+      min-complexity: 20
+    lll:
+      line-length: 140
+    nakedret:
+      max-func-lines: 50
+    sloglint:
+      attr-only: true
+      context: "all"
+      no-global: "all"
+      args-on-sep-lines: true
+    staticcheck:
+      checks:
+        - all
+
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - vendor
+      - third_party$
+    rules:
+      # Exclude some linters from running on tests files
+      - path: "_test\\.go$"
+        linters:
+          - gocyclo
+          - errcheck
+          - dupl
+          - gosec
+          - funlen
+          - gocognit
+          - gochecknoglobals
+          - lll
+          - revive
+          - unparam
+          - thelper
+          - tparallel
+          - nestif
