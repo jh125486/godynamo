@@ -275,7 +275,7 @@ func TestIntegration_EndToEnd(t *testing.T) {
 			want = append(want, p.ID.String())
 		}
 
-		items, err := godynamo.Query[Product](ctx, db).All()
+		items, err := godynamo.Query[Product](db).All(ctx)
 		if err != nil {
 			t.Fatalf("Query.All: %v", err)
 		}
@@ -307,10 +307,10 @@ func TestIntegration_EndToEnd(t *testing.T) {
 		}
 
 		pk := godynamo.PK(&CustomerOrder{CustomerID: customerID})
-		items, err := godynamo.Query[CustomerOrder](ctx, db).
+		items, err := godynamo.Query[CustomerOrder](db).
 			WherePK(pk).
 			SKBeginsWith("CustomerOrder#pending").
-			All()
+			All(ctx)
 		if err != nil {
 			t.Fatalf("Query.All: %v", err)
 		}
@@ -330,7 +330,7 @@ func TestIntegration_EndToEnd(t *testing.T) {
 			t.Fatalf("Put: %v", err)
 		}
 
-		items, err := godynamo.Scan[Product](ctx, db).All()
+		items, err := godynamo.Scan[Product](db).All(ctx)
 		if err != nil {
 			t.Fatalf("Scan.All: %v", err)
 		}
@@ -350,11 +350,11 @@ func TestIntegration_EndToEnd(t *testing.T) {
 		p1 := &Product{Name: "Batch1", Price: 1}
 		p2 := &Product{Name: "Batch2", Price: 2}
 
-		if err := godynamo.BatchWrite[Product](ctx, db).Put(p1, p2).Run(); err != nil {
+		if err := godynamo.BatchWrite[Product](db).Put(p1, p2).Run(ctx); err != nil {
 			t.Fatalf("BatchWrite.Run: %v", err)
 		}
 
-		items, err := godynamo.BatchGet[Product](ctx, db).IDs(p1.ID, p2.ID).Run()
+		items, err := godynamo.BatchGet[Product](db).IDs(p1.ID, p2.ID).Run(ctx)
 		if err != nil {
 			t.Fatalf("BatchGet.Run: %v", err)
 		}
@@ -370,17 +370,17 @@ func TestIntegration_EndToEnd(t *testing.T) {
 		}
 
 		newItem := &Product{Name: "Transacted", Price: 99}
-		err := godynamo.TransactWrite(ctx, db).
+		err := godynamo.TransactWrite(db).
 			Put(newItem).
 			ConditionCheck(guard, guard.Version).
-			Run()
+			Run(ctx)
 		if err != nil {
 			t.Fatalf("TransactWrite.Run: %v", err)
 		}
 
 		var got Product
 		got.ID = newItem.ID
-		if err := godynamo.TransactGet(ctx, db).Get(&got).Run(); err != nil {
+		if err := godynamo.TransactGet(db).Get(&got).Run(ctx); err != nil {
 			t.Fatalf("TransactGet.Run: %v", err)
 		}
 		if got.Name != "Transacted" || got.Price != 99 {
@@ -401,7 +401,7 @@ func TestIntegration_EndToEnd(t *testing.T) {
 		}
 
 		// Smoke-test a new non-equality Filter operator for real.
-		high, err := godynamo.Query[TaggedItem](ctx, db).FilterGreaterThan("Score", 15).All()
+		high, err := godynamo.Query[TaggedItem](db).FilterGreaterThan("Score", 15).All(ctx)
 		if err != nil {
 			t.Fatalf("Query.All (FilterGreaterThan): %v", err)
 		}
@@ -416,7 +416,7 @@ func TestIntegration_EndToEnd(t *testing.T) {
 		// Filter("Nickname", ...) exercises dynamodbav resolution for real:
 		// Nickname is marshaled under "nick_name", so this only matches if
 		// QueryBuilder.Filter resolved the Go field name correctly.
-		matched, err := godynamo.Query[TaggedItem](ctx, db).Filter("Nickname", "beta").All()
+		matched, err := godynamo.Query[TaggedItem](db).Filter("Nickname", "beta").All(ctx)
 		if err != nil {
 			t.Fatalf("Query.All (tagged Filter): %v", err)
 		}
@@ -426,7 +426,7 @@ func TestIntegration_EndToEnd(t *testing.T) {
 
 		// Same dynamodbav-resolution smoke test through ScanBuilder, using a
 		// different new operator (FilterBeginsWith).
-		scanned, err := godynamo.Scan[TaggedItem](ctx, db).FilterBeginsWith("Nickname", "al").All()
+		scanned, err := godynamo.Scan[TaggedItem](db).FilterBeginsWith("Nickname", "al").All(ctx)
 		if err != nil {
 			t.Fatalf("Scan.All (FilterBeginsWith, tagged): %v", err)
 		}
@@ -447,7 +447,7 @@ func TestIntegration_EndToEnd(t *testing.T) {
 			t.Fatalf("Put: %v", err)
 		}
 
-		items, err := godynamo.Query[Product](ctx, db2).All()
+		items, err := godynamo.Query[Product](db2).All(ctx)
 		if err != nil {
 			t.Fatalf("Query.All: %v", err)
 		}
@@ -470,7 +470,7 @@ func TestIntegration_EndToEnd(t *testing.T) {
 
 		pk, sk := godynamo.Keys(p)
 		stmt := fmt.Sprintf(`SELECT * FROM %q WHERE PK = ? AND SK = ?`, table)
-		items, err := godynamo.Statement[Product](ctx, db, stmt, pk, sk).All()
+		items, err := godynamo.Statement[Product](db, stmt, pk, sk).All(ctx)
 		if err != nil {
 			t.Fatalf("Statement.All: %v", err)
 		}

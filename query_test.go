@@ -43,7 +43,7 @@ func TestQuery_TypeIndexMode_DefaultIndex(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[widget](context.Background(), db).All(); err != nil {
+	if _, err := Query[widget](db).All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 
@@ -70,7 +70,7 @@ func TestQuery_TypeIndexMode_IndexOverride(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[widget](context.Background(), db).Index("CustomIndex").All(); err != nil {
+	if _, err := Query[widget](db).Index("CustomIndex").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if got := *captured.IndexName; got != "CustomIndex" {
@@ -88,7 +88,7 @@ func TestQuery_BaseTableMode(t *testing.T) {
 	})
 
 	pk := "widget#" + uuid.NewString()
-	if _, err := Query[widget](context.Background(), db).WherePK(pk).All(); err != nil {
+	if _, err := Query[widget](db).WherePK(pk).All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 
@@ -112,7 +112,7 @@ func TestQuery_SKBeginsWith(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[widget](context.Background(), db).WherePK("widget#x").SKBeginsWith("order#").All(); err != nil {
+	if _, err := Query[widget](db).WherePK("widget#x").SKBeginsWith("order#").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if !namesContain(captured.ExpressionAttributeNames, "SK") {
@@ -135,7 +135,7 @@ func TestQuery_SKEquals(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[widget](context.Background(), db).WherePK("widget#x").SKEquals("widget#x").All(); err != nil {
+	if _, err := Query[widget](db).WherePK("widget#x").SKEquals("widget#x").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if !namesContain(captured.ExpressionAttributeNames, "SK") {
@@ -155,7 +155,7 @@ func TestQuery_SKBetween(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[widget](context.Background(), db).WherePK("widget#x").SKBetween("a", "z").All(); err != nil {
+	if _, err := Query[widget](db).WherePK("widget#x").SKBetween("a", "z").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if !valuesContainS(captured.ExpressionAttributeValues, "a") || !valuesContainS(captured.ExpressionAttributeValues, "z") {
@@ -172,7 +172,7 @@ func TestQuery_Filter(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[widget](context.Background(), db).Filter("Name", "gizmo").All(); err != nil {
+	if _, err := Query[widget](db).Filter("Name", "gizmo").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil {
@@ -195,7 +195,7 @@ func TestQuery_FilterNotEqual(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[widget](context.Background(), db).FilterNotEqual("Name", "gizmo").All(); err != nil {
+	if _, err := Query[widget](db).FilterNotEqual("Name", "gizmo").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "<>") {
@@ -215,7 +215,7 @@ func TestQuery_FilterGreaterThan(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[widget](context.Background(), db).FilterGreaterThan("Name", "m").All(); err != nil {
+	if _, err := Query[widget](db).FilterGreaterThan("Name", "m").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, ">") {
@@ -232,7 +232,7 @@ func TestQuery_FilterGreaterOrEqual(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[widget](context.Background(), db).FilterGreaterOrEqual("Name", "m").All(); err != nil {
+	if _, err := Query[widget](db).FilterGreaterOrEqual("Name", "m").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, ">=") {
@@ -249,7 +249,7 @@ func TestQuery_FilterLessThan(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[widget](context.Background(), db).FilterLessThan("Name", "m").All(); err != nil {
+	if _, err := Query[widget](db).FilterLessThan("Name", "m").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "<") {
@@ -266,7 +266,7 @@ func TestQuery_FilterLessOrEqual(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[widget](context.Background(), db).FilterLessOrEqual("Name", "m").All(); err != nil {
+	if _, err := Query[widget](db).FilterLessOrEqual("Name", "m").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "<=") {
@@ -283,7 +283,7 @@ func TestQuery_FilterBeginsWith(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[widget](context.Background(), db).FilterBeginsWith("Name", "giz").All(); err != nil {
+	if _, err := Query[widget](db).FilterBeginsWith("Name", "giz").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "begins_with") {
@@ -303,7 +303,7 @@ func TestQuery_FilterContains(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[widget](context.Background(), db).FilterContains("Name", "izm").All(); err != nil {
+	if _, err := Query[widget](db).FilterContains("Name", "izm").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "contains") {
@@ -323,7 +323,7 @@ func TestQuery_FilterExists(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[widget](context.Background(), db).FilterExists("Name").All(); err != nil {
+	if _, err := Query[widget](db).FilterExists("Name").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "attribute_exists") {
@@ -340,7 +340,7 @@ func TestQuery_FilterNotExists(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[widget](context.Background(), db).FilterNotExists("Name").All(); err != nil {
+	if _, err := Query[widget](db).FilterNotExists("Name").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "attribute_not_exists") {
@@ -357,10 +357,10 @@ func TestQuery_MultiFilter_EqualityAndOperator_ANDed(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[widget](context.Background(), db).
+	if _, err := Query[widget](db).
 		Filter("Name", "gizmo").
 		FilterGreaterThan("Name", "a").
-		All(); err != nil {
+		All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !containsAnd(*captured.FilterExpression) {
@@ -377,7 +377,7 @@ func TestQuery_Filter_TaggedField_ResolvesToDynamodbavName(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[taggedWidget](context.Background(), db).Filter("NickName", "Bob").All(); err != nil {
+	if _, err := Query[taggedWidget](db).Filter("NickName", "Bob").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if !namesContain(captured.ExpressionAttributeNames, "custom_name") {
@@ -397,7 +397,7 @@ func TestQuery_Filter_NoTag_ResolvesToFieldNameUnchanged(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[taggedWidget](context.Background(), db).Filter("Name", "gizmo").All(); err != nil {
+	if _, err := Query[taggedWidget](db).Filter("Name", "gizmo").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if !namesContain(captured.ExpressionAttributeNames, "Name") {
@@ -414,7 +414,7 @@ func TestQuery_TypeIndexMode_CustomGSI1PKAttr(t *testing.T) {
 		},
 	}, WithGSI1PKAttr("CustomGSI1PK"))
 
-	if _, err := Query[widget](context.Background(), db).All(); err != nil {
+	if _, err := Query[widget](db).All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if !namesContain(captured.ExpressionAttributeNames, "CustomGSI1PK") {
@@ -453,7 +453,7 @@ func TestQuery_All_Pagination(t *testing.T) {
 		},
 	})
 
-	got, err := Query[widget](context.Background(), db).All()
+	got, err := Query[widget](db).All(context.Background())
 	if err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
@@ -489,7 +489,7 @@ func TestQuery_Page(t *testing.T) {
 		},
 	})
 
-	items, nextCursor, err := Query[widget](context.Background(), db).Page("")
+	items, nextCursor, err := Query[widget](db).Page(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Page() error = %v", err)
 	}
@@ -512,7 +512,7 @@ func TestQuery_Page(t *testing.T) {
 			return &dynamodb.QueryOutput{Items: []map[string]types.AttributeValue{av1}}, nil
 		},
 	})
-	_, nextCursor2, err := Query[widget](context.Background(), db2).Page(nextCursor)
+	_, nextCursor2, err := Query[widget](db2).Page(context.Background(), nextCursor)
 	if err != nil {
 		t.Fatalf("Page(cursor) error = %v", err)
 	}
@@ -526,7 +526,7 @@ func TestQuery_Page(t *testing.T) {
 
 func TestQuery_Page_BadCursor(t *testing.T) {
 	db := testDB(&stubClient{})
-	_, _, err := Query[widget](context.Background(), db).Page("not-valid-base64!!!")
+	_, _, err := Query[widget](db).Page(context.Background(), "not-valid-base64!!!")
 	if err == nil {
 		t.Fatal("expected error for malformed cursor, got nil")
 	}
@@ -577,7 +577,7 @@ func TestQuery_Limit(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[widget](context.Background(), db).Limit(25).All(); err != nil {
+	if _, err := Query[widget](db).Limit(25).All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.Limit == nil || *captured.Limit != 25 {
@@ -594,7 +594,7 @@ func TestQuery_Filter_EmptyFieldName_BuildError(t *testing.T) {
 		},
 	})
 
-	_, err := Query[widget](context.Background(), db).Filter("", "x").All()
+	_, err := Query[widget](db).Filter("", "x").All(context.Background())
 	if err == nil {
 		t.Fatal("expected error building query expression with an empty filter field name, got nil")
 	}
@@ -612,7 +612,7 @@ func TestQuery_Page_Filter_EmptyFieldName_BuildError(t *testing.T) {
 		},
 	})
 
-	_, _, err := Query[widget](context.Background(), db).Filter("", "x").Page("")
+	_, _, err := Query[widget](db).Filter("", "x").Page(context.Background(), "")
 	if err == nil {
 		t.Fatal("expected error building query expression with an empty filter field name, got nil")
 	}
@@ -628,7 +628,7 @@ func TestQuery_All_ClientError(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[widget](context.Background(), db).All(); err == nil {
+	if _, err := Query[widget](db).All(context.Background()); err == nil {
 		t.Fatal("expected error, got nil")
 	}
 }
@@ -646,7 +646,7 @@ func TestQuery_All_UnmarshalError(t *testing.T) {
 		},
 	})
 
-	if _, err := Query[badUnmarshalItem](context.Background(), db).All(); err == nil {
+	if _, err := Query[badUnmarshalItem](db).All(context.Background()); err == nil {
 		t.Fatal("expected unmarshal error, got nil")
 	}
 }
@@ -658,7 +658,7 @@ func TestQuery_Page_ClientError(t *testing.T) {
 		},
 	})
 
-	_, _, err := Query[widget](context.Background(), db).Page("")
+	_, _, err := Query[widget](db).Page(context.Background(), "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -677,7 +677,7 @@ func TestQuery_Page_UnmarshalError(t *testing.T) {
 		},
 	})
 
-	_, _, err = Query[badUnmarshalItem](context.Background(), db).Page("")
+	_, _, err = Query[badUnmarshalItem](db).Page(context.Background(), "")
 	if err == nil {
 		t.Fatal("expected unmarshal error, got nil")
 	}
@@ -699,7 +699,7 @@ func TestQuery_Page_EncodeCursorError(t *testing.T) {
 		},
 	})
 
-	_, _, err := Query[widget](context.Background(), db).Page("")
+	_, _, err := Query[widget](db).Page(context.Background(), "")
 	if err == nil {
 		t.Fatal("expected encodeCursor error, got nil")
 	}
@@ -759,7 +759,7 @@ func TestQuery_All_CompressedFieldSurvivesRoundTrip(t *testing.T) {
 		},
 	})
 
-	got, err := Query[compressWidget](context.Background(), db).All()
+	got, err := Query[compressWidget](db).All(context.Background())
 	if err != nil {
 		t.Fatalf("All() error = %v", err)
 	}

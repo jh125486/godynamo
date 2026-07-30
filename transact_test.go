@@ -53,10 +53,10 @@ func TestTransactGet_MultipleTypes(t *testing.T) {
 	dstW := &widget{Model: Model{ID: wID}}
 	dstG := &gadget{Model: Model{ID: gID}, Owner: "alice"}
 
-	err = TransactGet(context.Background(), db).
+	err = TransactGet(db).
 		Get(dstW).
 		Get(dstG).
-		Run()
+		Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -89,7 +89,7 @@ func TestTransactGet_MissingItemLeavesDstUntouched(t *testing.T) {
 	})
 
 	dst := &widget{Model: Model{ID: id}, Name: "untouched"}
-	if err := TransactGet(context.Background(), db).Get(dst).Run(); err != nil {
+	if err := TransactGet(db).Get(dst).Run(context.Background()); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 	if dst.Name != "untouched" || dst.ID != id {
@@ -109,7 +109,7 @@ func TestTransactGet_Empty_NoOp(t *testing.T) {
 		},
 	})
 
-	if err := TransactGet(context.Background(), db).Run(); err != nil {
+	if err := TransactGet(db).Run(context.Background()); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 	if called {
@@ -125,7 +125,7 @@ func TestTransactGet_ClientError(t *testing.T) {
 	})
 
 	dst := &widget{Model: Model{ID: uuid.New()}}
-	if err := TransactGet(context.Background(), db).Get(dst).Run(); err == nil {
+	if err := TransactGet(db).Get(dst).Run(context.Background()); err == nil {
 		t.Fatal("expected error, got nil")
 	}
 }
@@ -141,7 +141,7 @@ func TestTransactGet_FewerResponsesThanQueued(t *testing.T) {
 
 	dst1 := &widget{Model: Model{ID: uuid.New()}, Name: "untouched1"}
 	dst2 := &widget{Model: Model{ID: uuid.New()}, Name: "untouched2"}
-	if err := TransactGet(context.Background(), db).Get(dst1).Get(dst2).Run(); err != nil {
+	if err := TransactGet(db).Get(dst1).Get(dst2).Run(context.Background()); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 	if dst1.Name != "untouched1" || dst2.Name != "untouched2" {
@@ -165,7 +165,7 @@ func TestTransactGet_UnmarshalError(t *testing.T) {
 	})
 
 	dst := &badUnmarshalItem{Model: Model{ID: uuid.New()}}
-	if err := TransactGet(context.Background(), db).Get(dst).Run(); err == nil {
+	if err := TransactGet(db).Get(dst).Run(context.Background()); err == nil {
 		t.Fatal("expected unmarshal error, got nil")
 	}
 }
@@ -179,12 +179,12 @@ func TestTransactGet_TooManyItems_NoAPICall(t *testing.T) {
 		},
 	})
 
-	b := TransactGet(context.Background(), db)
+	b := TransactGet(db)
 	for range 101 {
 		b.Get(&widget{Model: Model{ID: uuid.New()}})
 	}
 
-	if err := b.Run(); err == nil {
+	if err := b.Run(context.Background()); err == nil {
 		t.Fatal("Run() error = nil, want non-nil for >100 queued items")
 	}
 	if called {
@@ -203,7 +203,7 @@ func TestTransactWrite_Put_NewItem_ConditionMatchesSinglePut(t *testing.T) {
 		},
 	})
 
-	if err := TransactWrite(context.Background(), db).Put(item).Run(); err != nil {
+	if err := TransactWrite(db).Put(item).Run(context.Background()); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
@@ -250,7 +250,7 @@ func TestTransactWrite_Put_ExistingItem_ConditionMatchesSinglePut(t *testing.T) 
 		},
 	})
 
-	if err := TransactWrite(context.Background(), db).Put(item).Run(); err != nil {
+	if err := TransactWrite(db).Put(item).Run(context.Background()); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
@@ -287,7 +287,7 @@ func TestTransactWrite_Delete(t *testing.T) {
 		},
 	})
 
-	if err := TransactWrite(context.Background(), db).Delete(keyItem).Run(); err != nil {
+	if err := TransactWrite(db).Delete(keyItem).Run(context.Background()); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
@@ -319,7 +319,7 @@ func TestTransactWrite_ConditionCheck(t *testing.T) {
 		},
 	})
 
-	if err := TransactWrite(context.Background(), db).ConditionCheck(keyItem, 5).Run(); err != nil {
+	if err := TransactWrite(db).ConditionCheck(keyItem, 5).Run(context.Background()); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
@@ -361,7 +361,7 @@ func TestTransactWrite_ConditionalCheckFailed_TranslatesToOptimisticLock(t *test
 		},
 	})
 
-	err := TransactWrite(context.Background(), db).Put(item).Run()
+	err := TransactWrite(db).Put(item).Run(context.Background())
 	if err == nil {
 		t.Fatal("Run() error = nil, want non-nil")
 	}
@@ -383,7 +383,7 @@ func TestTransactWrite_NonConditionCancellation_NotOptimisticLock(t *testing.T) 
 		},
 	})
 
-	err := TransactWrite(context.Background(), db).Put(item).Run()
+	err := TransactWrite(db).Put(item).Run(context.Background())
 	if err == nil {
 		t.Fatal("Run() error = nil, want non-nil")
 	}
@@ -401,12 +401,12 @@ func TestTransactWrite_TooManyItems_NoAPICall(t *testing.T) {
 		},
 	})
 
-	b := TransactWrite(context.Background(), db)
+	b := TransactWrite(db)
 	for range 101 {
 		b.Delete(&widget{Model: Model{ID: uuid.New()}})
 	}
 
-	if err := b.Run(); err == nil {
+	if err := b.Run(context.Background()); err == nil {
 		t.Fatal("Run() error = nil, want non-nil for >100 queued entries")
 	}
 	if called {
@@ -429,7 +429,7 @@ func TestTransactWrite_Put_MarshalError_SkipsSubsequentCalls(t *testing.T) {
 	// The first Put records a marshal error; the second Put call must
 	// short-circuit ("if b.err != nil { return b }") rather than attempt to
 	// stamp/marshal good.
-	err := TransactWrite(context.Background(), db).Put(bad).Put(good).Run()
+	err := TransactWrite(db).Put(bad).Put(good).Run(context.Background())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -452,7 +452,7 @@ func TestTransactWrite_ConditionCheck_SkipsWhenErrAlreadySet(t *testing.T) {
 
 	// Put records an error first; ConditionCheck must short-circuit
 	// ("if b.err != nil { return b }") rather than queue another entry.
-	err := TransactWrite(context.Background(), db).Put(bad).ConditionCheck(keyItem, 1).Run()
+	err := TransactWrite(db).Put(bad).ConditionCheck(keyItem, 1).Run(context.Background())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -470,7 +470,7 @@ func TestTransactWrite_Empty_NoOp(t *testing.T) {
 		},
 	})
 
-	if err := TransactWrite(context.Background(), db).Run(); err != nil {
+	if err := TransactWrite(db).Run(context.Background()); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 	if called {
@@ -486,7 +486,7 @@ func TestTransactWrite_GenericError_NotTransactionCanceled(t *testing.T) {
 		},
 	})
 
-	err := TransactWrite(context.Background(), db).Put(item).Run()
+	err := TransactWrite(db).Put(item).Run(context.Background())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -545,10 +545,10 @@ func TestTransactGet_CompressedFieldSurvivesRoundTrip(t *testing.T) {
 
 	var gotWidget widget
 	var gotCompressed compressWidget
-	err = TransactGet(context.Background(), db).
+	err = TransactGet(db).
 		Get(&gotWidget).
 		Get(&gotCompressed).
-		Run()
+		Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}

@@ -37,16 +37,16 @@ func batchBackoff(attempt int) time.Duration {
 // BatchGetBuilder is a fluent builder for a batched multi-item fetch of a
 // single type T, obtained via [BatchGet].
 type BatchGetBuilder[T any] struct {
-	ctx context.Context
 	db  *DB
 	ids []uuid.UUID
 }
 
 // BatchGet returns a fluent builder for fetching multiple items of type T
-// via one or more BatchGetItem calls. ctx is captured for use by
-// [BatchGetBuilder.Run] — it is not re-passed to it.
-func BatchGet[T any](ctx context.Context, db *DB) *BatchGetBuilder[T] {
-	return &BatchGetBuilder[T]{ctx: ctx, db: db}
+// via one or more BatchGetItem calls. No I/O happens until
+// [BatchGetBuilder.Run] is called, so BatchGet itself takes no
+// context.Context — ctx is required directly on Run instead.
+func BatchGet[T any](db *DB) *BatchGetBuilder[T] {
+	return &BatchGetBuilder[T]{db: db}
 }
 
 // IDs queues ids to be fetched, appending to any previously queued IDs.
@@ -78,7 +78,7 @@ func (b *BatchGetBuilder[T]) IDs(ids ...uuid.UUID) *BatchGetBuilder[T] {
 // retries with just those keys, up to batchMaxRetries times with a short
 // linearly-growing backoff between attempts. If keys are still unprocessed
 // once retries are exhausted, Run returns an error.
-func (b *BatchGetBuilder[T]) Run() ([]T, error) {
+func (b *BatchGetBuilder[T]) Run(ctx context.Context) ([]T, error) {
 	if err := requiresDefaultKey[T]("BatchGetBuilder.Run"); err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func (b *BatchGetBuilder[T]) Run() ([]T, error) {
 	var items []T
 	for start := 0; start < len(keys); start += batchGetMaxKeys {
 		end := min(start+batchGetMaxKeys, len(keys))
-		chunkItems, err := b.runChunk(keys[start:end])
+		chunkItems, err := b.runChunk(ctx, keys[start:end])
 		if err != nil {
 			return nil, fmt.Errorf("godynamo: batch get %s: %w", typeName, err)
 		}
@@ -107,12 +107,12 @@ func (b *BatchGetBuilder[T]) Run() ([]T, error) {
 
 // runChunk issues BatchGetItem calls for one chunk of at most 100 keys,
 // retrying UnprocessedKeys as described on [BatchGetBuilder.Run].
-func (b *BatchGetBuilder[T]) runChunk(keys []map[string]types.AttributeValue) ([]T, error) {
+func (b *BatchGetBuilder[T]) runChunk(ctx context.Context, keys []map[string]types.AttributeValue) ([]T, error) {
 	var items []T
 	request := keys
 
 	for attempt := 0; ; attempt++ {
-		out, err := b.db.client.BatchGetItem(b.ctx, &dynamodb.BatchGetItemInput{
+		out, err := b.db.client.BatchGetItem(ctx, &dynamodb.BatchGetItemInput{
 			RequestItems: map[string]types.KeysAndAttributes{
 				b.db.table: {Keys: request},
 			},
@@ -141,27 +141,43 @@ func (b *BatchGetBuilder[T]) runChunk(keys []map[string]types.AttributeValue) ([
 	}
 }
 
+// batchWriteOp is one queued Put or Delete entry on a [BatchWriteBuilder],
+// preserving the call order of interleaved Put/Delete calls. A Delete
+// entry's WriteRequest is built immediately, since [zeroKeys] needs no
+// ctx. A Put entry just stores item as-is — its create-vs-update
+// audit-stamping (which needs ctx, for the DB's actor hook) and marshaling
+// happen lazily in [BatchWriteBuilder.Run], since ctx is no longer
+// available at Put-call time.
+type batchWriteOp[T any] struct {
+	put     *T
+	request types.WriteRequest // valid when put == nil.
+}
+
 // BatchWriteBuilder is a fluent builder for a batched multi-item write
 // (create/update/delete) of a single type T, obtained via [BatchWrite].
 type BatchWriteBuilder[T any] struct {
-	ctx    context.Context
-	db     *DB
-	writes []types.WriteRequest
-	err    error
+	db  *DB
+	ops []batchWriteOp[T]
+	err error
 }
 
 // BatchWrite returns a fluent builder for writing multiple items of type T
-// via one or more BatchWriteItem calls. ctx is captured for use by
-// [BatchWriteBuilder.Run] — it is not re-passed to it.
-func BatchWrite[T any](ctx context.Context, db *DB) *BatchWriteBuilder[T] {
-	return &BatchWriteBuilder[T]{ctx: ctx, db: db}
+// via one or more BatchWriteItem calls. No I/O happens until
+// [BatchWriteBuilder.Run] is called, so BatchWrite itself takes no
+// context.Context — ctx is required directly on Run instead.
+func BatchWrite[T any](db *DB) *BatchWriteBuilder[T] {
+	return &BatchWriteBuilder[T]{db: db}
 }
 
 // Put queues items to be created or updated, using the same
 // create-vs-update audit-stamping logic as single-item [Put] (zero
 // Model.CreatedAt => new item: [SetType], stamp
 // CreatedAt/CreatedBy/UpdatedAt/UpdatedBy, Version=1; non-zero => preserve
-// CreatedAt/CreatedBy, bump UpdatedAt/UpdatedBy, increment Version).
+// CreatedAt/CreatedBy, bump UpdatedAt/UpdatedBy, increment Version). Put
+// itself does no stamping or marshaling — items are queued as-is and only
+// stamped/marshaled when [BatchWriteBuilder.Run] is called (which is where
+// ctx, needed for the DB's actor hook, is supplied); any marshal failure is
+// surfaced from Run instead of from Put.
 //
 // UNLIKE single-item [Put] (and unlike [TransactWriteBuilder.Put]),
 // BatchWrite's puts are unconditional: BatchWriteItem has no
@@ -173,16 +189,11 @@ func BatchWrite[T any](ctx context.Context, db *DB) *BatchWriteBuilder[T] {
 // the item's previous value. Callers that need either guarantee must use
 // [Put] or [TransactWrite] instead.
 func (b *BatchWriteBuilder[T]) Put(items ...*T) *BatchWriteBuilder[T] {
+	if b.err != nil {
+		return b
+	}
 	for _, item := range items {
-		if b.err != nil {
-			return b
-		}
-		av, _, err := stampAndMarshal(b.ctx, b.db, item)
-		if err != nil {
-			b.err = err
-			return b
-		}
-		b.writes = append(b.writes, types.WriteRequest{PutRequest: &types.PutRequest{Item: av}})
+		b.ops = append(b.ops, batchWriteOp[T]{put: item})
 	}
 	return b
 }
@@ -204,32 +215,48 @@ func (b *BatchWriteBuilder[T]) Delete(ids ...uuid.UUID) *BatchWriteBuilder[T] {
 	}
 	for _, id := range ids {
 		pk, sk := zeroKeys[T](id)
-		b.writes = append(b.writes, types.WriteRequest{DeleteRequest: &types.DeleteRequest{Key: itemKey(pk, sk)}})
+		b.ops = append(b.ops, batchWriteOp[T]{
+			request: types.WriteRequest{DeleteRequest: &types.DeleteRequest{Key: itemKey(pk, sk)}},
+		})
 	}
 	return b
 }
 
-// Run executes the batched write. Queued Put/Delete entries are combined
-// (in the order queued) and chunked into groups of at most 25 (AWS's
-// BatchWriteItem hard per-call limit), issued as separate BatchWriteItem
-// calls, sequentially.
+// Run executes the batched write. Queued Put entries are stamped/marshaled
+// now (using ctx, via the same logic as single-item [Put]); combined with
+// the already-built Delete entries (in the order queued), the result is
+// chunked into groups of at most 25 (AWS's BatchWriteItem hard per-call
+// limit) and issued as separate BatchWriteItem calls, sequentially.
 //
 // If a chunk's response has non-empty UnprocessedItems for the table, Run
 // retries with just those write requests, up to batchMaxRetries times with
 // a short linearly-growing backoff between attempts. If items are still
 // unprocessed once retries are exhausted, Run returns an error.
-func (b *BatchWriteBuilder[T]) Run() error {
+func (b *BatchWriteBuilder[T]) Run(ctx context.Context) error {
 	typeName := reflect.TypeFor[T]().Name()
 	if b.err != nil {
 		return fmt.Errorf("godynamo: batch write %s: %w", typeName, b.err)
 	}
-	if len(b.writes) == 0 {
+	if len(b.ops) == 0 {
 		return nil
 	}
 
-	for start := 0; start < len(b.writes); start += batchWriteMaxRequests {
-		end := min(start+batchWriteMaxRequests, len(b.writes))
-		if err := b.runChunk(b.writes[start:end]); err != nil {
+	writes := make([]types.WriteRequest, len(b.ops))
+	for i, op := range b.ops {
+		if op.put == nil {
+			writes[i] = op.request
+			continue
+		}
+		av, _, err := stampAndMarshal(ctx, b.db, op.put)
+		if err != nil {
+			return fmt.Errorf("godynamo: batch write %s: %w", typeName, err)
+		}
+		writes[i] = types.WriteRequest{PutRequest: &types.PutRequest{Item: av}}
+	}
+
+	for start := 0; start < len(writes); start += batchWriteMaxRequests {
+		end := min(start+batchWriteMaxRequests, len(writes))
+		if err := b.runChunk(ctx, writes[start:end]); err != nil {
 			return fmt.Errorf("godynamo: batch write %s: %w", typeName, err)
 		}
 	}
@@ -239,11 +266,11 @@ func (b *BatchWriteBuilder[T]) Run() error {
 // runChunk issues BatchWriteItem calls for one chunk of at most 25 write
 // requests, retrying UnprocessedItems as described on
 // [BatchWriteBuilder.Run].
-func (b *BatchWriteBuilder[T]) runChunk(writes []types.WriteRequest) error {
+func (b *BatchWriteBuilder[T]) runChunk(ctx context.Context, writes []types.WriteRequest) error {
 	request := writes
 
 	for attempt := 0; ; attempt++ {
-		out, err := b.db.client.BatchWriteItem(b.ctx, &dynamodb.BatchWriteItemInput{
+		out, err := b.db.client.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
 			RequestItems: map[string][]types.WriteRequest{
 				b.db.table: request,
 			},

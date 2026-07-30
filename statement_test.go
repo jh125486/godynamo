@@ -24,7 +24,7 @@ func TestStatement_All_Basic(t *testing.T) {
 	})
 
 	stmt := `SELECT * FROM "widgets" WHERE PK = ? AND SK = ?`
-	got, err := Statement[widget](context.Background(), db, stmt, "widget#pk", "widget#sk").All()
+	got, err := Statement[widget](db, stmt, "widget#pk", "widget#sk").All(context.Background())
 	if err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
@@ -59,7 +59,7 @@ func TestStatement_All_NoParams(t *testing.T) {
 		},
 	})
 
-	if _, err := Statement[widget](context.Background(), db, `SELECT * FROM "widgets"`).All(); err != nil {
+	if _, err := Statement[widget](db, `SELECT * FROM "widgets"`).All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if len(captured.Parameters) != 0 {
@@ -93,7 +93,7 @@ func TestStatement_All_Pagination(t *testing.T) {
 		},
 	})
 
-	got, err := Statement[widget](context.Background(), db, `SELECT * FROM "widgets"`).All()
+	got, err := Statement[widget](db, `SELECT * FROM "widgets"`).All(context.Background())
 	if err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
@@ -118,7 +118,7 @@ func TestStatement_Page_NoMorePages(t *testing.T) {
 		},
 	})
 
-	items, nextCursor, err := Statement[widget](context.Background(), db, `SELECT * FROM "widgets"`).Page("")
+	items, nextCursor, err := Statement[widget](db, `SELECT * FROM "widgets"`).Page(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Page() error = %v", err)
 	}
@@ -144,7 +144,7 @@ func TestStatement_Page_MorePagesAndCursorPassthrough(t *testing.T) {
 		},
 	})
 
-	items, nextCursor, err := Statement[widget](context.Background(), db, `SELECT * FROM "widgets"`).Page("")
+	items, nextCursor, err := Statement[widget](db, `SELECT * FROM "widgets"`).Page(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Page() error = %v", err)
 	}
@@ -164,7 +164,7 @@ func TestStatement_Page_MorePagesAndCursorPassthrough(t *testing.T) {
 			return &dynamodb.ExecuteStatementOutput{}, nil
 		},
 	})
-	if _, _, err := Statement[widget](context.Background(), db2, `SELECT * FROM "widgets"`).Page(nextCursor); err != nil {
+	if _, _, err := Statement[widget](db2, `SELECT * FROM "widgets"`).Page(context.Background(), nextCursor); err != nil {
 		t.Fatalf("Page(cursor) error = %v", err)
 	}
 	if capturedToken == nil || *capturedToken != nextCursor {
@@ -181,7 +181,7 @@ func TestStatement_Limit(t *testing.T) {
 		},
 	})
 
-	if _, err := Statement[widget](context.Background(), db, `SELECT * FROM "widgets"`).Limit(25).All(); err != nil {
+	if _, err := Statement[widget](db, `SELECT * FROM "widgets"`).Limit(25).All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.Limit == nil || *captured.Limit != 25 {
@@ -198,7 +198,7 @@ func TestStatement_ConsistentRead(t *testing.T) {
 		},
 	})
 
-	if _, err := Statement[widget](context.Background(), db, `SELECT * FROM "widgets"`).ConsistentRead(true).All(); err != nil {
+	if _, err := Statement[widget](db, `SELECT * FROM "widgets"`).ConsistentRead(true).All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.ConsistentRead == nil || !*captured.ConsistentRead {
@@ -218,16 +218,16 @@ func TestStatement_ParamMarshalError_SurfacesLazily(t *testing.T) {
 	// Statement itself must not error -- it returns *StatementBuilder[T] per
 	// its signature, so a marshal failure has to be deferred to a terminal
 	// method.
-	b := Statement[widget](context.Background(), db, `SELECT * FROM "widgets" WHERE Bad = ?`, badMarshalField{})
+	b := Statement[widget](db, `SELECT * FROM "widgets" WHERE Bad = ?`, badMarshalField{})
 
-	if _, err := b.All(); err == nil {
+	if _, err := b.All(context.Background()); err == nil {
 		t.Fatal("All() expected error from bad marshal param, got nil")
 	}
 	if called {
 		t.Error("ExecuteStatement was called, want no call when a param fails to marshal")
 	}
 
-	_, _, err := Statement[widget](context.Background(), db, `SELECT * FROM "widgets" WHERE Bad = ?`, badMarshalField{}).Page("")
+	_, _, err := Statement[widget](db, `SELECT * FROM "widgets" WHERE Bad = ?`, badMarshalField{}).Page(context.Background(), "")
 	if err == nil {
 		t.Fatal("Page() expected error from bad marshal param, got nil")
 	}
@@ -240,7 +240,7 @@ func TestStatement_All_ClientError(t *testing.T) {
 		},
 	})
 
-	if _, err := Statement[widget](context.Background(), db, `SELECT * FROM "widgets"`).All(); err == nil {
+	if _, err := Statement[widget](db, `SELECT * FROM "widgets"`).All(context.Background()); err == nil {
 		t.Fatal("All() expected error, got nil")
 	}
 }
@@ -252,7 +252,7 @@ func TestStatement_Page_ClientError(t *testing.T) {
 		},
 	})
 
-	if _, _, err := Statement[widget](context.Background(), db, `SELECT * FROM "widgets"`).Page(""); err == nil {
+	if _, _, err := Statement[widget](db, `SELECT * FROM "widgets"`).Page(context.Background(), ""); err == nil {
 		t.Fatal("Page() expected error, got nil")
 	}
 }
@@ -267,7 +267,7 @@ func TestStatement_All_UnmarshalError(t *testing.T) {
 		},
 	})
 
-	if _, err := Statement[badUnmarshalItem](context.Background(), db, `SELECT * FROM "widgets"`).All(); err == nil {
+	if _, err := Statement[badUnmarshalItem](db, `SELECT * FROM "widgets"`).All(context.Background()); err == nil {
 		t.Fatal("All() expected unmarshal error, got nil")
 	}
 }
@@ -282,7 +282,7 @@ func TestStatement_Page_UnmarshalError(t *testing.T) {
 		},
 	})
 
-	if _, _, err := Statement[badUnmarshalItem](context.Background(), db, `SELECT * FROM "widgets"`).Page(""); err == nil {
+	if _, _, err := Statement[badUnmarshalItem](db, `SELECT * FROM "widgets"`).Page(context.Background(), ""); err == nil {
 		t.Fatal("Page() expected unmarshal error, got nil")
 	}
 }
@@ -304,7 +304,7 @@ func TestStatement_All_CompressedFieldSurvivesRoundTrip(t *testing.T) {
 		},
 	})
 
-	got, err := Statement[compressWidget](context.Background(), db, `SELECT * FROM "widgets"`).All()
+	got, err := Statement[compressWidget](db, `SELECT * FROM "widgets"`).All(context.Background())
 	if err != nil {
 		t.Fatalf("All() error = %v", err)
 	}

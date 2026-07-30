@@ -48,7 +48,7 @@ func TestBatchGet_Basic(t *testing.T) {
 		},
 	})
 
-	got, err := BatchGet[widget](context.Background(), db).IDs(ids...).Run()
+	got, err := BatchGet[widget](db).IDs(ids...).Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -87,7 +87,7 @@ func TestBatchGet_Chunking(t *testing.T) {
 		},
 	})
 
-	got, err := BatchGet[widget](context.Background(), db).IDs(ids...).Run()
+	got, err := BatchGet[widget](db).IDs(ids...).Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -136,7 +136,7 @@ func TestBatchGet_UnprocessedKeysRetry(t *testing.T) {
 		},
 	})
 
-	got, err := BatchGet[widget](context.Background(), db).IDs(id1, id2).Run()
+	got, err := BatchGet[widget](db).IDs(id1, id2).Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -165,7 +165,7 @@ func TestBatchGet_RetryExhaustion(t *testing.T) {
 		},
 	})
 
-	_, err := BatchGet[widget](context.Background(), db).IDs(id).Run()
+	_, err := BatchGet[widget](db).IDs(id).Run(context.Background())
 	if err == nil {
 		t.Fatal("Run() error = nil, want non-nil after retry exhaustion")
 	}
@@ -183,7 +183,7 @@ func TestBatchGet_Empty_NoOp(t *testing.T) {
 		},
 	})
 
-	got, err := BatchGet[widget](context.Background(), db).Run()
+	got, err := BatchGet[widget](db).Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -202,7 +202,7 @@ func TestBatchGet_ClientError(t *testing.T) {
 		},
 	})
 
-	_, err := BatchGet[widget](context.Background(), db).IDs(uuid.New()).Run()
+	_, err := BatchGet[widget](db).IDs(uuid.New()).Run(context.Background())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -224,7 +224,7 @@ func TestBatchGet_UnmarshalError(t *testing.T) {
 		},
 	})
 
-	_, err = BatchGet[badUnmarshalItem](context.Background(), db).IDs(id).Run()
+	_, err = BatchGet[badUnmarshalItem](db).IDs(id).Run(context.Background())
 	if err == nil {
 		t.Fatal("expected unmarshal error, got nil")
 	}
@@ -233,7 +233,7 @@ func TestBatchGet_UnmarshalError(t *testing.T) {
 func TestBatchGet_NonDefaultKey_ReturnsErrNonDefaultKey(t *testing.T) {
 	db := testDB(&stubClient{})
 
-	_, err := BatchGet[internalOrder](context.Background(), db).IDs(uuid.New()).Run()
+	_, err := BatchGet[internalOrder](db).IDs(uuid.New()).Run(context.Background())
 	if !errors.Is(err, ErrNonDefaultKey) {
 		t.Fatalf("error = %v, want wrapping ErrNonDefaultKey", err)
 	}
@@ -242,7 +242,7 @@ func TestBatchGet_NonDefaultKey_ReturnsErrNonDefaultKey(t *testing.T) {
 func TestBatchWrite_Delete_NonDefaultKey_ReturnsErrNonDefaultKey(t *testing.T) {
 	db := testDB(&stubClient{})
 
-	err := BatchWrite[internalOrder](context.Background(), db).Delete(uuid.New()).Run()
+	err := BatchWrite[internalOrder](db).Delete(uuid.New()).Run(context.Background())
 	if !errors.Is(err, ErrNonDefaultKey) {
 		t.Fatalf("error = %v, want wrapping ErrNonDefaultKey", err)
 	}
@@ -260,10 +260,10 @@ func TestBatchWrite_PutAndDelete(t *testing.T) {
 		},
 	})
 
-	err := BatchWrite[widget](context.Background(), db).
+	err := BatchWrite[widget](db).
 		Put(putItem).
 		Delete(deleteID).
-		Run()
+		Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -325,7 +325,7 @@ func TestBatchWrite_Put_NoConditionExpression(t *testing.T) {
 			return &dynamodb.BatchWriteItemOutput{}, nil
 		},
 	})
-	if err := BatchWrite[widget](context.Background(), db).Put(item2).Run(); err != nil {
+	if err := BatchWrite[widget](db).Put(item2).Run(context.Background()); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
@@ -358,7 +358,7 @@ func TestBatchWrite_Chunking(t *testing.T) {
 		},
 	})
 
-	if err := BatchWrite[widget](context.Background(), db).Put(items...).Run(); err != nil {
+	if err := BatchWrite[widget](db).Put(items...).Run(context.Background()); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 	if calls != 2 {
@@ -395,7 +395,7 @@ func TestBatchWrite_UnprocessedItemsRetry(t *testing.T) {
 		},
 	})
 
-	if err := BatchWrite[widget](context.Background(), db).Put(item1, item2).Run(); err != nil {
+	if err := BatchWrite[widget](db).Put(item1, item2).Run(context.Background()); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 	if calls != 2 {
@@ -417,7 +417,7 @@ func TestBatchWrite_RetryExhaustion(t *testing.T) {
 		},
 	})
 
-	err := BatchWrite[widget](context.Background(), db).Put(item).Run()
+	err := BatchWrite[widget](db).Put(item).Run(context.Background())
 	if err == nil {
 		t.Fatal("Run() error = nil, want non-nil after retry exhaustion")
 	}
@@ -444,7 +444,7 @@ func TestBatchWrite_Put_MarshalError_SkipsSubsequentItems(t *testing.T) {
 		},
 	})
 
-	err := BatchWrite[badMarshalItem](context.Background(), db).Put(bad1).Put(bad2).Run()
+	err := BatchWrite[badMarshalItem](db).Put(bad1).Put(bad2).Run(context.Background())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -462,7 +462,7 @@ func TestBatchWrite_Empty_NoOp(t *testing.T) {
 		},
 	})
 
-	if err := BatchWrite[widget](context.Background(), db).Run(); err != nil {
+	if err := BatchWrite[widget](db).Run(context.Background()); err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 	if called {
@@ -478,7 +478,7 @@ func TestBatchWrite_ClientError(t *testing.T) {
 		},
 	})
 
-	if err := BatchWrite[widget](context.Background(), db).Put(item).Run(); err == nil {
+	if err := BatchWrite[widget](db).Put(item).Run(context.Background()); err == nil {
 		t.Fatal("expected error, got nil")
 	}
 }
@@ -505,7 +505,7 @@ func TestBatchGet_CompressedFieldSurvivesRoundTrip(t *testing.T) {
 		},
 	})
 
-	got, err := BatchGet[compressWidget](context.Background(), db).IDs(id).Run()
+	got, err := BatchGet[compressWidget](db).IDs(id).Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}

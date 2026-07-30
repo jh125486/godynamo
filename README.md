@@ -92,9 +92,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	openTasks, err := godynamo.Query[Task](ctx, db).
+	openTasks, err := godynamo.Query[Task](db).
 		Filter("Status", "open").
-		All()
+		All(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -192,10 +192,10 @@ you write the whole statement (including the table name) yourself:
 
 ```go
 pk, sk := godynamo.Keys(task)
-items, err := godynamo.Statement[Task](ctx, db,
+items, err := godynamo.Statement[Task](db,
 	`SELECT * FROM "my-table" WHERE PK = ? AND SK = ?`,
 	pk, sk,
-).All()
+).All(ctx)
 ```
 
 `params` are positional values for the statement's `?` placeholders,
@@ -212,7 +212,7 @@ and `ExecuteTransaction` are out of scope; use `Put`/`Update`/`Delete`,
 
 ## The type-index GSI
 
-Type-index queries (`Query[T](ctx, db)` with no `WherePK` call) list every
+Type-index queries (`Query[T](db)` with no `WherePK` call) list every
 item of a given Go type by querying a global secondary index for
 `GSI1PK = "TypeName"`. Your table must have a GSI (default name `"GSI1"`,
 overridable via `WithGSI1Name`) with partition key `GSI1PK` (String,

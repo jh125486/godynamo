@@ -127,11 +127,10 @@ func filterExpression(filters []filterCondition) expression.ConditionBuilder {
 // optionally AND FilterExpression clauses on non-key attributes.
 //
 // No I/O happens until a terminal method ([QueryBuilder.All] or
-// [QueryBuilder.Page]) is called; both reuse the context captured by
-// [Query] rather than requiring it again.
+// [QueryBuilder.Page]) is called; ctx is required directly on whichever
+// terminal method is called, not captured at construction.
 type QueryBuilder[T any] struct {
-	ctx context.Context
-	db  *DB
+	db *DB
 
 	pk      *string // nil => type-index mode; non-nil => base-table mode, value is the PK.
 	sk      skCondition
@@ -140,11 +139,12 @@ type QueryBuilder[T any] struct {
 	limit   *int32
 }
 
-// Query returns a fluent builder for querying items of type T. ctx is
-// captured for use by the builder's terminal methods ([QueryBuilder.All],
-// [QueryBuilder.Page]) — it is not re-passed to them.
-func Query[T any](ctx context.Context, db *DB) *QueryBuilder[T] {
-	return &QueryBuilder[T]{ctx: ctx, db: db}
+// Query returns a fluent builder for querying items of type T. No I/O
+// happens until a terminal method ([QueryBuilder.All], [QueryBuilder.Page])
+// is called, so Query itself takes no context.Context — ctx is required
+// directly on those terminal methods instead.
+func Query[T any](db *DB) *QueryBuilder[T] {
+	return &QueryBuilder[T]{db: db}
 }
 
 // WherePK switches the builder into base-table query mode, with an
@@ -348,9 +348,8 @@ func (b *QueryBuilder[T]) buildInput() (*dynamodb.QueryInput, error) {
 
 // All is a terminal method that runs the built query to exhaustion,
 // following LastEvaluatedKey → ExclusiveStartKey until every page has been
-// fetched, and returns every matched item unmarshaled into T. It uses the
-// context captured by [Query].
-func (b *QueryBuilder[T]) All() ([]T, error) {
+// fetched, and returns every matched item unmarshaled into T.
+func (b *QueryBuilder[T]) All(ctx context.Context) ([]T, error) {
 	typeName := reflect.TypeFor[T]().Name()
 	input, err := b.buildInput()
 	if err != nil {
@@ -359,7 +358,7 @@ func (b *QueryBuilder[T]) All() ([]T, error) {
 
 	var items []T
 	for {
-		out, err := b.db.client.Query(b.ctx, input)
+		out, err := b.db.client.Query(ctx, input)
 		if err != nil {
 			return nil, fmt.Errorf("godynamo: query %s: %w", typeName, err)
 		}
@@ -381,9 +380,8 @@ func (b *QueryBuilder[T]) All() ([]T, error) {
 // Page is a terminal method that runs the built query for exactly one
 // DynamoDB Query call. If cursor is non-empty it is decoded and used as
 // ExclusiveStartKey. If the response has a LastEvaluatedKey, nextCursor is
-// its encoded form; otherwise nextCursor is "" (no more pages). It uses the
-// context captured by [Query].
-func (b *QueryBuilder[T]) Page(cursor string) (items []T, nextCursor string, err error) {
+// its encoded form; otherwise nextCursor is "" (no more pages).
+func (b *QueryBuilder[T]) Page(ctx context.Context, cursor string) (items []T, nextCursor string, err error) {
 	typeName := reflect.TypeFor[T]().Name()
 	input, err := b.buildInput()
 	if err != nil {
@@ -397,7 +395,7 @@ func (b *QueryBuilder[T]) Page(cursor string) (items []T, nextCursor string, err
 		input.ExclusiveStartKey = key
 	}
 
-	out, err := b.db.client.Query(b.ctx, input)
+	out, err := b.db.client.Query(ctx, input)
 	if err != nil {
 		return nil, "", fmt.Errorf("godynamo: query %s: %w", typeName, err)
 	}

@@ -26,7 +26,7 @@ func TestScan_Basic(t *testing.T) {
 		},
 	})
 
-	got, err := Scan[widget](context.Background(), db).All()
+	got, err := Scan[widget](db).All(context.Background())
 	if err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
@@ -53,7 +53,7 @@ func TestScan_Filter(t *testing.T) {
 		},
 	})
 
-	if _, err := Scan[widget](context.Background(), db).Filter("Name", "gizmo").All(); err != nil {
+	if _, err := Scan[widget](db).Filter("Name", "gizmo").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil {
@@ -76,7 +76,7 @@ func TestScan_MultiFilter_ANDed(t *testing.T) {
 		},
 	})
 
-	if _, err := Scan[widget](context.Background(), db).Filter("Name", "gizmo").Filter("Type", "widget").All(); err != nil {
+	if _, err := Scan[widget](db).Filter("Name", "gizmo").Filter("Type", "widget").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !containsAnd(*captured.FilterExpression) {
@@ -93,7 +93,7 @@ func TestScan_FilterNotEqual(t *testing.T) {
 		},
 	})
 
-	if _, err := Scan[widget](context.Background(), db).FilterNotEqual("Name", "gizmo").All(); err != nil {
+	if _, err := Scan[widget](db).FilterNotEqual("Name", "gizmo").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "<>") {
@@ -110,7 +110,7 @@ func TestScan_FilterGreaterThan(t *testing.T) {
 		},
 	})
 
-	if _, err := Scan[widget](context.Background(), db).FilterGreaterThan("Name", "m").All(); err != nil {
+	if _, err := Scan[widget](db).FilterGreaterThan("Name", "m").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, ">") {
@@ -127,7 +127,7 @@ func TestScan_FilterGreaterOrEqual(t *testing.T) {
 		},
 	})
 
-	if _, err := Scan[widget](context.Background(), db).FilterGreaterOrEqual("Name", "m").All(); err != nil {
+	if _, err := Scan[widget](db).FilterGreaterOrEqual("Name", "m").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, ">=") {
@@ -144,7 +144,7 @@ func TestScan_FilterLessThan(t *testing.T) {
 		},
 	})
 
-	if _, err := Scan[widget](context.Background(), db).FilterLessThan("Name", "m").All(); err != nil {
+	if _, err := Scan[widget](db).FilterLessThan("Name", "m").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "<") {
@@ -161,7 +161,7 @@ func TestScan_FilterLessOrEqual(t *testing.T) {
 		},
 	})
 
-	if _, err := Scan[widget](context.Background(), db).FilterLessOrEqual("Name", "m").All(); err != nil {
+	if _, err := Scan[widget](db).FilterLessOrEqual("Name", "m").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "<=") {
@@ -178,7 +178,7 @@ func TestScan_FilterBeginsWith(t *testing.T) {
 		},
 	})
 
-	if _, err := Scan[widget](context.Background(), db).FilterBeginsWith("Name", "giz").All(); err != nil {
+	if _, err := Scan[widget](db).FilterBeginsWith("Name", "giz").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "begins_with") {
@@ -195,7 +195,7 @@ func TestScan_FilterContains(t *testing.T) {
 		},
 	})
 
-	if _, err := Scan[widget](context.Background(), db).FilterContains("Name", "izm").All(); err != nil {
+	if _, err := Scan[widget](db).FilterContains("Name", "izm").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "contains") {
@@ -212,7 +212,7 @@ func TestScan_FilterExists(t *testing.T) {
 		},
 	})
 
-	if _, err := Scan[widget](context.Background(), db).FilterExists("Name").All(); err != nil {
+	if _, err := Scan[widget](db).FilterExists("Name").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "attribute_exists") {
@@ -229,7 +229,7 @@ func TestScan_FilterNotExists(t *testing.T) {
 		},
 	})
 
-	if _, err := Scan[widget](context.Background(), db).FilterNotExists("Name").All(); err != nil {
+	if _, err := Scan[widget](db).FilterNotExists("Name").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !strings.Contains(*captured.FilterExpression, "attribute_not_exists") {
@@ -246,10 +246,10 @@ func TestScan_MultiFilter_EqualityAndOperator_ANDed(t *testing.T) {
 		},
 	})
 
-	if _, err := Scan[widget](context.Background(), db).
+	if _, err := Scan[widget](db).
 		Filter("Name", "gizmo").
 		FilterLessThan("Name", "z").
-		All(); err != nil {
+		All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression == nil || !containsAnd(*captured.FilterExpression) {
@@ -266,7 +266,7 @@ func TestScan_Filter_TaggedField_ResolvesToDynamodbavName(t *testing.T) {
 		},
 	})
 
-	if _, err := Scan[taggedWidget](context.Background(), db).Filter("NickName", "Bob").All(); err != nil {
+	if _, err := Scan[taggedWidget](db).Filter("NickName", "Bob").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if !namesContain(captured.ExpressionAttributeNames, "custom_name") {
@@ -286,7 +286,7 @@ func TestScan_Filter_NoTag_ResolvesToFieldNameUnchanged(t *testing.T) {
 		},
 	})
 
-	if _, err := Scan[taggedWidget](context.Background(), db).Filter("Name", "gizmo").All(); err != nil {
+	if _, err := Scan[taggedWidget](db).Filter("Name", "gizmo").All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if !namesContain(captured.ExpressionAttributeNames, "Name") {
@@ -303,7 +303,7 @@ func TestScan_NoFilter_NoFilterExpression(t *testing.T) {
 		},
 	})
 
-	if _, err := Scan[widget](context.Background(), db).All(); err != nil {
+	if _, err := Scan[widget](db).All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.FilterExpression != nil {
@@ -320,7 +320,7 @@ func TestScan_Limit(t *testing.T) {
 		},
 	})
 
-	if _, err := Scan[widget](context.Background(), db).Limit(25).All(); err != nil {
+	if _, err := Scan[widget](db).Limit(25).All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.Limit == nil || *captured.Limit != 25 {
@@ -337,7 +337,7 @@ func TestScan_Filter_EmptyFieldName_BuildError(t *testing.T) {
 		},
 	})
 
-	_, err := Scan[widget](context.Background(), db).Filter("", "x").All()
+	_, err := Scan[widget](db).Filter("", "x").All(context.Background())
 	if err == nil {
 		t.Fatal("expected error building scan expression with an empty filter field name, got nil")
 	}
@@ -359,7 +359,7 @@ func TestScan_UnmarshalError(t *testing.T) {
 		},
 	})
 
-	if _, err := Scan[badUnmarshalItem](context.Background(), db).All(); err == nil {
+	if _, err := Scan[badUnmarshalItem](db).All(context.Background()); err == nil {
 		t.Fatal("expected unmarshal error, got nil")
 	}
 }
@@ -398,7 +398,7 @@ func TestScan_All_Pagination(t *testing.T) {
 		},
 	})
 
-	got, err := Scan[widget](context.Background(), db).All()
+	got, err := Scan[widget](db).All(context.Background())
 	if err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
@@ -436,7 +436,7 @@ func TestScan_Parallel_SegmentsSetCorrectly(t *testing.T) {
 		},
 	})
 
-	if _, err := Scan[widget](context.Background(), db).Parallel(n).All(); err != nil {
+	if _, err := Scan[widget](db).Parallel(n).All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 
@@ -477,7 +477,7 @@ func TestScan_Parallel_MergesResultsAcrossSegments(t *testing.T) {
 		},
 	})
 
-	got, err := Scan[widget](context.Background(), db).Parallel(n).All()
+	got, err := Scan[widget](db).Parallel(n).All(context.Background())
 	if err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
@@ -530,7 +530,7 @@ func TestScan_Parallel_MultiPagePerSegment(t *testing.T) {
 		},
 	})
 
-	got, err := Scan[widget](context.Background(), db).Parallel(n).All()
+	got, err := Scan[widget](db).Parallel(n).All(context.Background())
 	if err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
@@ -562,7 +562,7 @@ func TestScan_Parallel_ErrorPath(t *testing.T) {
 		},
 	})
 
-	got, err := Scan[widget](context.Background(), db).Parallel(n).All()
+	got, err := Scan[widget](db).Parallel(n).All(context.Background())
 	if err == nil {
 		t.Fatal("All() error = nil, want non-nil")
 	}
@@ -580,7 +580,7 @@ func TestScan_SingleSegment_NoParallelCall_LeavesSegmentUnset(t *testing.T) {
 		},
 	})
 
-	if _, err := Scan[widget](context.Background(), db).Parallel(1).All(); err != nil {
+	if _, err := Scan[widget](db).Parallel(1).All(context.Background()); err != nil {
 		t.Fatalf("All() error = %v", err)
 	}
 	if captured.Segment != nil || captured.TotalSegments != nil {
@@ -605,7 +605,7 @@ func TestScan_All_CompressedFieldSurvivesRoundTrip(t *testing.T) {
 		},
 	})
 
-	got, err := Scan[compressWidget](context.Background(), db).All()
+	got, err := Scan[compressWidget](db).All(context.Background())
 	if err != nil {
 		t.Fatalf("All() error = %v", err)
 	}

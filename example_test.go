@@ -79,9 +79,9 @@ func Example() {
 	}
 	_ = got
 
-	openTasks, err := godynamo.Query[Task](ctx, db).
+	openTasks, err := godynamo.Query[Task](db).
 		Filter("Status", "open").
-		All()
+		All(ctx)
 	if err != nil {
 		panic(err)
 	}

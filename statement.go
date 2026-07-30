@@ -26,10 +26,9 @@ import (
 // writes and transactions.
 //
 // No I/O happens until a terminal method ([StatementBuilder.All] or
-// [StatementBuilder.Page]) is called; both reuse the context captured by
-// [Statement] rather than requiring it again.
+// [StatementBuilder.Page]) is called; ctx is required directly on whichever
+// terminal method is called, not captured at construction.
 type StatementBuilder[T any] struct {
-	ctx  context.Context
 	db   *DB
 	stmt string
 
@@ -42,9 +41,10 @@ type StatementBuilder[T any] struct {
 
 // Statement returns a fluent builder for running a raw PartiQL SELECT
 // statement stmt (e.g. `SELECT * FROM "my-table" WHERE PK = ? AND SK = ?`)
-// against DynamoDB and unmarshaling matching items into T. ctx is captured
-// for use by the builder's terminal methods ([StatementBuilder.All],
-// [StatementBuilder.Page]) — it is not re-passed to them.
+// against DynamoDB and unmarshaling matching items into T. No I/O happens
+// until a terminal method ([StatementBuilder.All], [StatementBuilder.Page])
+// is called, so Statement itself takes no context.Context — ctx is
+// required directly on those terminal methods instead.
 //
 // params are positional values for stmt's "?" placeholders, marshaled
 // individually via attributevalue.Marshal (not MarshalMap — these are
@@ -57,8 +57,8 @@ type StatementBuilder[T any] struct {
 // See [Query] for this package's fluent, non-PartiQL alternative — prefer
 // it when its type-index/base-table query shapes suffice; reach for
 // Statement when they don't.
-func Statement[T any](ctx context.Context, db *DB, stmt string, params ...any) *StatementBuilder[T] {
-	b := &StatementBuilder[T]{ctx: ctx, db: db, stmt: stmt}
+func Statement[T any](db *DB, stmt string, params ...any) *StatementBuilder[T] {
+	b := &StatementBuilder[T]{db: db, stmt: stmt}
 
 	if len(params) > 0 {
 		b.params = make([]types.AttributeValue, len(params))
@@ -110,8 +110,8 @@ func (b *StatementBuilder[T]) buildInput() *dynamodb.ExecuteStatementInput {
 // pages — PartiQL's pagination token is a ready-to-use opaque string from
 // AWS itself, so unlike [QueryBuilder.Page]'s hand-rolled cursor encoding,
 // no cursor encoding/decoding is needed here). It returns every matched
-// item unmarshaled into T. It uses the context captured by [Statement].
-func (b *StatementBuilder[T]) All() ([]T, error) {
+// item unmarshaled into T.
+func (b *StatementBuilder[T]) All(ctx context.Context) ([]T, error) {
 	if b.err != nil {
 		return nil, b.err
 	}
@@ -120,7 +120,7 @@ func (b *StatementBuilder[T]) All() ([]T, error) {
 
 	var items []T
 	for {
-		out, err := b.db.client.ExecuteStatement(b.ctx, input)
+		out, err := b.db.client.ExecuteStatement(ctx, input)
 		if err != nil {
 			return nil, fmt.Errorf("godynamo: execute statement %s: %w", typeName, err)
 		}
@@ -144,8 +144,8 @@ func (b *StatementBuilder[T]) All() ([]T, error) {
 // through as ExecuteStatementInput.NextToken with no decoding — unlike
 // [QueryBuilder.Page], AWS's token is already an opaque string safe to hand
 // back to the caller as-is. It returns out.NextToken (dereferenced, or ""
-// if nil) as nextCursor. It uses the context captured by [Statement].
-func (b *StatementBuilder[T]) Page(cursor string) (items []T, nextCursor string, err error) {
+// if nil) as nextCursor.
+func (b *StatementBuilder[T]) Page(ctx context.Context, cursor string) (items []T, nextCursor string, err error) {
 	if b.err != nil {
 		return nil, "", b.err
 	}
@@ -155,7 +155,7 @@ func (b *StatementBuilder[T]) Page(cursor string) (items []T, nextCursor string,
 		input.NextToken = aws.String(cursor)
 	}
 
-	out, err := b.db.client.ExecuteStatement(b.ctx, input)
+	out, err := b.db.client.ExecuteStatement(ctx, input)
 	if err != nil {
 		return nil, "", fmt.Errorf("godynamo: execute statement %s: %w", typeName, err)
 	}
