@@ -175,7 +175,7 @@ func TestPK_PanicsWithoutModel(t *testing.T) {
 		Name string
 	}
 	defer func() {
-		if r := recover(); r == nil {
+		if recover() == nil {
 			t.Fatal("expected panic for struct without embedded Model")
 		}
 	}()
@@ -184,7 +184,7 @@ func TestPK_PanicsWithoutModel(t *testing.T) {
 
 func TestPK_PanicsOnNilPointer(t *testing.T) {
 	defer func() {
-		if r := recover(); r == nil {
+		if recover() == nil {
 			t.Fatal("expected panic for nil pointer")
 		}
 	}()
@@ -194,7 +194,7 @@ func TestPK_PanicsOnNilPointer(t *testing.T) {
 
 func TestPK_PanicsOnNonStruct(t *testing.T) {
 	defer func() {
-		if r := recover(); r == nil {
+		if recover() == nil {
 			t.Fatal("expected panic for a non-struct value")
 		}
 	}()
@@ -210,7 +210,7 @@ type FieldMismatch struct {
 
 func TestPK_PanicsOnMissingField(t *testing.T) {
 	defer func() {
-		if r := recover(); r == nil {
+		if recover() == nil {
 			t.Fatal("expected panic for a pk clause referencing a nonexistent field")
 		}
 	}()

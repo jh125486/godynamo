@@ -64,7 +64,7 @@ func TestParseTags_PanicsWithoutModel(t *testing.T) {
 		Name string
 	}
 	defer func() {
-		if r := recover(); r == nil {
+		if recover() == nil {
 			t.Fatal("expected panic for struct without embedded Model")
 		}
 	}()

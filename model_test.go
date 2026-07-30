@@ -24,7 +24,7 @@ func TestSetType(t *testing.T) {
 
 func TestSetType_PanicsOnNonPointer(t *testing.T) {
 	defer func() {
-		if r := recover(); r == nil {
+		if recover() == nil {
 			t.Fatal("expected panic for non-pointer argument")
 		}
 	}()
@@ -36,7 +36,7 @@ func TestSetType_PanicsWithoutModel(t *testing.T) {
 		Name string
 	}
 	defer func() {
-		if r := recover(); r == nil {
+		if recover() == nil {
 			t.Fatal("expected panic for struct without embedded Model")
 		}
 	}()
@@ -45,7 +45,7 @@ func TestSetType_PanicsWithoutModel(t *testing.T) {
 
 func TestSetType_PanicsOnPointerToNonStruct(t *testing.T) {
 	defer func() {
-		if r := recover(); r == nil {
+		if recover() == nil {
 			t.Fatal("expected panic for a pointer to a non-struct value")
 		}
 	}()
