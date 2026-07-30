@@ -118,16 +118,43 @@ func unmarshalItemInto(av map[string]types.AttributeValue, dst any) error {
 		return nil
 	}
 
-	type compressedField struct {
-		fieldName string
-		data      []byte
-	}
-	var pending []compressedField
+	filtered, pending := extractCompressedFields(t, mt, av)
 
-	filtered := make(map[string]types.AttributeValue, len(av))
+	if err := attributevalue.UnmarshalMap(filtered, dst); err != nil {
+		return fmt.Errorf("godynamo: unmarshal: %w", err)
+	}
+
+	return applyPendingCompressedFields(sv, pending)
+}
+
+// compressedField is a compressFields entry set aside by
+// [extractCompressedFields], still carrying its raw gzip bytes.
+type compressedField struct {
+	fieldName string
+	data      []byte
+}
+
+// extractCompressedFields builds a shallow copy of av (the caller's av is
+// never mutated) and, for each of t's compressFields entries whose resolved
+// attribute name is present in that copy as a Binary
+// ([types.AttributeValueMemberB]) value, removes it from the copy and
+// appends it to the returned pending slice. Removing it first is necessary,
+// since attributevalue.UnmarshalMap would otherwise try (and fail, or
+// produce garbage) to unmarshal raw gzip bytes into the field's real Go
+// type.
+//
+// A compressFields entry with no matching Binary attribute in av (e.g. an
+// older item written before the field existed, or a legitimately-empty
+// value that was never written) is simply absent from pending rather than
+// treated as an error.
+func extractCompressedFields(
+	t reflect.Type, mt *modelTags, av map[string]types.AttributeValue,
+) (filtered map[string]types.AttributeValue, pending []compressedField) {
+	filtered = make(map[string]types.AttributeValue, len(av))
 	for k, v := range av {
 		filtered[k] = v
 	}
+
 	for _, fieldName := range mt.compressFields {
 		attr := resolveAttrName(t, fieldName)
 		raw, ok := filtered[attr]
@@ -145,11 +172,14 @@ func unmarshalItemInto(av map[string]types.AttributeValue, dst any) error {
 		pending = append(pending, compressedField{fieldName: fieldName, data: b.Value})
 		delete(filtered, attr)
 	}
+	return filtered, pending
+}
 
-	if err := attributevalue.UnmarshalMap(filtered, dst); err != nil {
-		return fmt.Errorf("godynamo: unmarshal: %w", err)
-	}
-
+// applyPendingCompressedFields gunzips and JSON-unmarshals each pending
+// field's set-aside data back into the field's real type, and sets it on sv
+// (the addressable struct value backing the unmarshal destination) via
+// reflection.
+func applyPendingCompressedFields(sv reflect.Value, pending []compressedField) error {
 	for _, p := range pending {
 		decompressed, err := decompressJSON(p.data)
 		if err != nil {
