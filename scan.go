@@ -15,8 +15,8 @@ import (
 // ScanBuilder is a fluent builder for a DynamoDB Scan, obtained via [Scan].
 //
 // Unlike [QueryBuilder], Scan always targets the base table directly — no
-// IndexName is ever set on the built ScanInput, so scanning a GSI is out of
-// scope for this phase.
+// IndexName is ever set on the built ScanInput, so scanning a GSI is not
+// supported.
 //
 // [ScanBuilder.Filter] and its operator-specific siblings (FilterNotEqual,
 // FilterGreaterThan, FilterBeginsWith, ...) optionally AND FilterExpression
@@ -30,7 +30,7 @@ import (
 // There is intentionally no .Page(cursor) method here, unlike
 // [QueryBuilder.Page]: a single opaque cursor doesn't compose cleanly with
 // parallel segments' independent LastEvaluatedKey chains, so per-page
-// pagination is out of scope for this phase — not an oversight.
+// pagination is not supported — not an oversight.
 type ScanBuilder[T any] struct {
 	db *DB
 

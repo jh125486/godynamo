@@ -16,7 +16,7 @@ import (
 // modelFieldOf returns the addressable reflect.Value of item's embedded
 // Model field. item must be a non-nil pointer to a struct embedding
 // [Model]; otherwise modelFieldOf panics, mirroring the panic-on-misuse
-// convention of the Phase 1 key builders.
+// convention used by the [PK]/[SK] key builders.
 func modelFieldOf(item any) reflect.Value {
 	rv := reflect.ValueOf(item)
 	if rv.Kind() != reflect.Pointer || rv.IsNil() {

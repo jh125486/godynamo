@@ -51,8 +51,8 @@ type StatementBuilder[T any] struct {
 // scalar/composite values, not a struct-to-map marshal) in the order given.
 // If any param fails to marshal, the error is captured and returned lazily
 // from the first terminal method call, rather than from Statement itself —
-// see [BatchWriteBuilder.Put] for the same accumulate-then-check-at-Run()
-// pattern.
+// the same accumulate-then-check pattern [BatchWriteBuilder.Put] uses
+// (there, checked at Run; here, checked at All/Page).
 //
 // See [Query] for this package's fluent, non-PartiQL alternative — prefer
 // it when its type-index/base-table query shapes suffice; reach for

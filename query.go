@@ -274,8 +274,8 @@ func (b *QueryBuilder[T]) addFilter(op filterOp, field string, value any) *Query
 
 // Index overrides which GSI name is used in type-index mode (default
 // db.gsi1Name). It has no effect in base-table mode (after [QueryBuilder.WherePK]).
-// This does not provide general arbitrary-index querying — that is out of
-// scope for this phase and left to a future generalization.
+// This does not provide general arbitrary-index querying — that is not
+// currently supported; a future version could generalize this.
 func (b *QueryBuilder[T]) Index(name string) *QueryBuilder[T] {
 	b.index = name
 	return b
