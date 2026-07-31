@@ -298,12 +298,23 @@ func TestMarshalUnmarshalItem_DynamodbavOverride_UsesOverriddenName(t *testing.T
 	}
 }
 
-func TestUnmarshalItemInto_RejectsNilPointer(t *testing.T) {
+func TestUnmarshalItemInto_NilPointer_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for nil destination pointer")
+		}
+	}()
 	var dst *compressWidget
-	err := unmarshalItemInto(map[string]types.AttributeValue{}, dst)
-	if err == nil {
-		t.Fatal("expected error for nil destination pointer, got nil")
-	}
+	_ = unmarshalItemInto(map[string]types.AttributeValue{}, dst)
+}
+
+func TestUnmarshalItemInto_NonPointer_Panics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for non-pointer destination")
+		}
+	}()
+	_ = unmarshalItemInto(map[string]types.AttributeValue{}, compressWidget{})
 }
 
 func TestUnmarshalItemInto_DoesNotMutateCallerMap(t *testing.T) {

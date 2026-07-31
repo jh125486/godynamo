@@ -82,6 +82,13 @@ func marshalItem(item any) (map[string]types.AttributeValue, error) {
 // embedding [Model]), identically to attributevalue.UnmarshalMap for any
 // destination type with no `dynamo:"compress"` fields.
 //
+// dst must be a non-nil pointer; if it isn't, unmarshalItemInto panics
+// (rather than returning an error), mirroring [modelFieldOf]'s
+// panic-on-misuse convention for the same kind of structural precondition
+// failure. Every internal call site always passes a genuine, freshly
+// constructed, non-nil *T, so this panic is only reachable from
+// [TransactGetBuilder.Get]'s externally caller-supplied dst.
+//
 // For each field named in dst's parsed [modelTags.compressFields] whose
 // resolved attribute name is present in av as a Binary
 // ([types.AttributeValueMemberB]) value, unmarshalItemInto sets that
@@ -105,7 +112,7 @@ func marshalItem(item any) (map[string]types.AttributeValue, error) {
 func unmarshalItemInto(av map[string]types.AttributeValue, dst any) error {
 	dv := reflect.ValueOf(dst)
 	if dv.Kind() != reflect.Pointer || dv.IsNil() {
-		return fmt.Errorf("godynamo: unmarshalItemInto requires a non-nil pointer, got %T", dst)
+		panic(fmt.Sprintf("godynamo: unmarshalItemInto requires a non-nil pointer, got %T", dst))
 	}
 	sv := dv.Elem()
 	t := sv.Type()
