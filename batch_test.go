@@ -3,6 +3,7 @@ package godynamo
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
@@ -172,6 +173,11 @@ func TestBatchGet_RetryExhaustion(t *testing.T) {
 	if calls != batchMaxRetries+1 {
 		t.Errorf("BatchGetItem calls = %d, want %d (1 initial + %d retries)", calls, batchMaxRetries+1, batchMaxRetries)
 	}
+	// runChunk's "%d keys still unprocessed..." error is now
+	// "godynamo:"-prefixed; Run's wrap must not add a second prefix.
+	if n := strings.Count(err.Error(), "godynamo:"); n != 1 {
+		t.Errorf(`error = %q contains %d occurrences of "godynamo:", want exactly 1`, err.Error(), n)
+	}
 }
 
 func TestBatchGet_Empty_NoOp(t *testing.T) {
@@ -228,6 +234,11 @@ func TestBatchGet_UnmarshalError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected unmarshal error, got nil")
 	}
+	// runChunk's "unmarshal: %w" error is now "godynamo:"-prefixed; Run's
+	// wrap must not add a second "godynamo:" prefix on top.
+	if n := strings.Count(err.Error(), "godynamo:"); n != 1 {
+		t.Errorf(`error = %q contains %d occurrences of "godynamo:", want exactly 1`, err.Error(), n)
+	}
 }
 
 func TestBatchGet_NonDefaultKey_ReturnsErrNonDefaultKey(t *testing.T) {
@@ -246,6 +257,14 @@ func TestBatchWrite_Delete_NonDefaultKey_ReturnsErrNonDefaultKey(t *testing.T) {
 	if !errors.Is(err, ErrNonDefaultKey) {
 		t.Fatalf("error = %v, want wrapping ErrNonDefaultKey", err)
 	}
+	// Note: this path's error text contains "godynamo:" twice regardless of
+	// this change -- requiresDefaultKey's own message ("godynamo: %s
+	// requires...") wraps the already-"godynamo:"-prefixed sentinel
+	// ErrNonDefaultKey itself. That's a pre-existing pattern shared by
+	// every requiresDefaultKey call site (Get, Delete, UpdateBuilder.Run,
+	// BatchGetBuilder.Run too) and out of scope here; Run's own wrap of
+	// b.err was still fixed (see TestBatchWrite_Put_MarshalError_
+	// SkipsSubsequentItems) to not add a further, third "godynamo:".
 }
 
 func TestBatchWrite_PutAndDelete(t *testing.T) {
@@ -427,6 +446,11 @@ func TestBatchWrite_RetryExhaustion(t *testing.T) {
 	if errors.Is(err, ErrOptimisticLock) {
 		t.Errorf("error = %v, should not wrap ErrOptimisticLock", err)
 	}
+	// runChunk's "%d write requests still unprocessed..." error is now
+	// "godynamo:"-prefixed; Run's wrap must not add a second prefix.
+	if n := strings.Count(err.Error(), "godynamo:"); n != 1 {
+		t.Errorf(`error = %q contains %d occurrences of "godynamo:", want exactly 1`, err.Error(), n)
+	}
 }
 
 func TestBatchWrite_Put_MarshalError_SkipsSubsequentItems(t *testing.T) {
@@ -450,6 +474,12 @@ func TestBatchWrite_Put_MarshalError_SkipsSubsequentItems(t *testing.T) {
 	}
 	if called {
 		t.Error("BatchWriteItem was called, want no call once Put has recorded a marshal error")
+	}
+	// stampAndMarshal's error is already "godynamo:"-prefixed; Run must not
+	// re-wrap it with a second "godynamo:" prefix (regression test for the
+	// double-prefix bug).
+	if n := strings.Count(err.Error(), "godynamo:"); n != 1 {
+		t.Errorf(`error = %q contains %d occurrences of "godynamo:", want exactly 1`, err.Error(), n)
 	}
 }
 

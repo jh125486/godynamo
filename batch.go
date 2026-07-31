@@ -50,6 +50,11 @@ func BatchGet[T any](db *DB) *BatchGetBuilder[T] {
 }
 
 // IDs queues ids to be fetched, appending to any previously queued IDs.
+//
+// Unlike [BatchWriteBuilder.Delete], IDs does not itself check
+// [requiresDefaultKey][T] — there's nothing to build yet, so IDs just
+// appends the raw uuid.UUIDs as given. The check instead happens lazily,
+// the first time [BatchGetBuilder.Run] is called.
 func (b *BatchGetBuilder[T]) IDs(ids ...uuid.UUID) *BatchGetBuilder[T] {
 	b.ids = append(b.ids, ids...)
 	return b
@@ -98,7 +103,10 @@ func (b *BatchGetBuilder[T]) Run(ctx context.Context) ([]T, error) {
 		end := min(start+batchGetMaxKeys, len(keys))
 		chunkItems, err := b.runChunk(ctx, keys[start:end])
 		if err != nil {
-			return nil, fmt.Errorf("godynamo: batch get %s: %w", typeName, err)
+			// runChunk's errors are already godynamo-prefixed (raw AWS
+			// errors and internal failures alike) -- wrap with %w for
+			// context without repeating the prefix.
+			return nil, fmt.Errorf("batch get %s: %w", typeName, err)
 		}
 		items = append(items, chunkItems...)
 	}
@@ -118,13 +126,17 @@ func (b *BatchGetBuilder[T]) runChunk(ctx context.Context, keys []map[string]typ
 			},
 		})
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("godynamo: batch get: %w", err)
 		}
 
 		for _, av := range out.Responses[b.db.table] {
 			var item T
 			if err := unmarshalItemInto(av, &item); err != nil {
-				return nil, fmt.Errorf("unmarshal: %w", err)
+				// unmarshalItemInto's error is already godynamo-prefixed
+				// (it's own "godynamo: unmarshal: %w") -- return it
+				// unwrapped rather than re-wrapping (which would double
+				// both the "godynamo:" prefix and the "unmarshal:" label).
+				return nil, err
 			}
 			items = append(items, item)
 		}
@@ -134,7 +146,7 @@ func (b *BatchGetBuilder[T]) runChunk(ctx context.Context, keys []map[string]typ
 			return items, nil
 		}
 		if attempt >= batchMaxRetries {
-			return nil, fmt.Errorf("%d keys still unprocessed after %d retries", len(unprocessed.Keys), batchMaxRetries)
+			return nil, fmt.Errorf("godynamo: %d keys still unprocessed after %d retries", len(unprocessed.Keys), batchMaxRetries)
 		}
 		request = unprocessed.Keys
 		time.Sleep(batchBackoff(attempt))
@@ -205,6 +217,13 @@ func (b *BatchWriteBuilder[T]) Put(items ...*T) *BatchWriteBuilder[T] {
 // the same deferred-error mechanism as [BatchWriteBuilder.Put]'s marshal
 // errors), surfaced when [BatchWriteBuilder.Run] is called, rather than
 // silently computing a wrong key.
+//
+// Unlike [BatchGetBuilder.IDs], Delete checks [requiresDefaultKey][T]
+// eagerly, right here at call time (storing any failure into b.err) rather
+// than lazily at Run. That's not an inconsistency: Delete must build the
+// DynamoDB key immediately, to queue it in call-order alongside any
+// interleaved Put calls, so the check has to happen now too; IDs has
+// nothing to build yet, so it has nothing that forces the check early.
 func (b *BatchWriteBuilder[T]) Delete(ids ...uuid.UUID) *BatchWriteBuilder[T] {
 	if b.err != nil {
 		return b
@@ -235,7 +254,10 @@ func (b *BatchWriteBuilder[T]) Delete(ids ...uuid.UUID) *BatchWriteBuilder[T] {
 func (b *BatchWriteBuilder[T]) Run(ctx context.Context) error {
 	typeName := reflect.TypeFor[T]().Name()
 	if b.err != nil {
-		return fmt.Errorf("godynamo: batch write %s: %w", typeName, b.err)
+		// b.err (set by Delete's eager requiresDefaultKey check) is already
+		// godynamo-prefixed -- wrap with %w for context without repeating
+		// the prefix.
+		return fmt.Errorf("batch write %s: %w", typeName, b.err)
 	}
 	if len(b.ops) == 0 {
 		return nil
@@ -249,7 +271,9 @@ func (b *BatchWriteBuilder[T]) Run(ctx context.Context) error {
 		}
 		av, _, err := stampAndMarshal(ctx, b.db, op.put)
 		if err != nil {
-			return fmt.Errorf("godynamo: batch write %s: %w", typeName, err)
+			// stampAndMarshal's error is already godynamo-prefixed -- wrap
+			// with %w for context without repeating the prefix.
+			return fmt.Errorf("batch write %s: %w", typeName, err)
 		}
 		writes[i] = types.WriteRequest{PutRequest: &types.PutRequest{Item: av}}
 	}
@@ -257,7 +281,9 @@ func (b *BatchWriteBuilder[T]) Run(ctx context.Context) error {
 	for start := 0; start < len(writes); start += batchWriteMaxRequests {
 		end := min(start+batchWriteMaxRequests, len(writes))
 		if err := b.runChunk(ctx, writes[start:end]); err != nil {
-			return fmt.Errorf("godynamo: batch write %s: %w", typeName, err)
+			// runChunk's errors are already godynamo-prefixed -- wrap with
+			// %w for context without repeating the prefix.
+			return fmt.Errorf("batch write %s: %w", typeName, err)
 		}
 	}
 	return nil
@@ -276,7 +302,7 @@ func (b *BatchWriteBuilder[T]) runChunk(ctx context.Context, writes []types.Writ
 			},
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("godynamo: batch write: %w", err)
 		}
 
 		unprocessed := out.UnprocessedItems[b.db.table]
@@ -284,7 +310,7 @@ func (b *BatchWriteBuilder[T]) runChunk(ctx context.Context, writes []types.Writ
 			return nil
 		}
 		if attempt >= batchMaxRetries {
-			return fmt.Errorf("%d write requests still unprocessed after %d retries", len(unprocessed), batchMaxRetries)
+			return fmt.Errorf("godynamo: %d write requests still unprocessed after %d retries", len(unprocessed), batchMaxRetries)
 		}
 		request = unprocessed
 		time.Sleep(batchBackoff(attempt))
