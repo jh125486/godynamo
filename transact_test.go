@@ -3,6 +3,7 @@ package godynamo
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -190,6 +191,63 @@ func TestTransactGet_TooManyItems_NoAPICall(t *testing.T) {
 	if called {
 		t.Error("TransactGetItems was called, want no call when over the limit")
 	}
+}
+
+// TestTransactGet_NilDst_Panics confirms that TransactGetBuilder.Get's
+// externally caller-supplied dst is subject to unmarshalItemInto's
+// panic-on-misuse precondition (see compress.go) when dst is a nil pointer:
+// unlike every other call site in this package (which always pass a
+// freshly constructed, genuinely non-nil *T), Get(dst any) takes dst
+// straight from the caller with no validation of its own.
+func TestTransactGet_NilDst_Panics(t *testing.T) {
+	wID := uuid.New()
+	want := widget{Model: Model{ID: wID, Type: "widget", CreatedAt: fixedNow, Version: 1}, Name: "gizmo"}
+	wantAV, err := attributevalue.MarshalMap(want)
+	if err != nil {
+		t.Fatalf("MarshalMap() error = %v", err)
+	}
+
+	db := testDB(&stubClient{
+		transactGetItemsFn: func(_ context.Context, _ *dynamodb.TransactGetItemsInput) (*dynamodb.TransactGetItemsOutput, error) {
+			return &dynamodb.TransactGetItemsOutput{
+				Responses: []types.ItemResponse{{Item: wantAV}},
+			}, nil
+		},
+	})
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for nil dst")
+		}
+	}()
+	var dst *widget
+	_ = TransactGet(db).Get(dst).Run(context.Background())
+}
+
+// TestTransactGet_NonPointerDst_Panics is the non-pointer counterpart of
+// TestTransactGet_NilDst_Panics.
+func TestTransactGet_NonPointerDst_Panics(t *testing.T) {
+	wID := uuid.New()
+	want := widget{Model: Model{ID: wID, Type: "widget", CreatedAt: fixedNow, Version: 1}, Name: "gizmo"}
+	wantAV, err := attributevalue.MarshalMap(want)
+	if err != nil {
+		t.Fatalf("MarshalMap() error = %v", err)
+	}
+
+	db := testDB(&stubClient{
+		transactGetItemsFn: func(_ context.Context, _ *dynamodb.TransactGetItemsInput) (*dynamodb.TransactGetItemsOutput, error) {
+			return &dynamodb.TransactGetItemsOutput{
+				Responses: []types.ItemResponse{{Item: wantAV}},
+			}, nil
+		},
+	})
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic for non-pointer dst")
+		}
+	}()
+	_ = TransactGet(db).Get(widget{}).Run(context.Background())
 }
 
 func TestTransactWrite_Put_NewItem_ConditionMatchesSinglePut(t *testing.T) {
@@ -435,6 +493,33 @@ func TestTransactWrite_Put_MarshalError_SkipsSubsequentCalls(t *testing.T) {
 	}
 	if called {
 		t.Error("TransactWriteItems was called, want no call once Put has recorded an error")
+	}
+	// stampAndMarshal's error is already "godynamo:"-prefixed; Run must not
+	// re-wrap it with a second "godynamo:" prefix (regression test for the
+	// double-prefix bug).
+	if n := strings.Count(err.Error(), "godynamo:"); n != 1 {
+		t.Errorf(`error = %q contains %d occurrences of "godynamo:", want exactly 1`, err.Error(), n)
+	}
+}
+
+// TestTransactWrite_Delete_SkipsWhenErrAlreadySet confirms Delete has the
+// same "if b.err != nil { return b }" short-circuit guard as its siblings
+// Put and ConditionCheck: once a build-time error is recorded, Delete must
+// not queue an entry. b.err is set directly (white-box, same package)
+// since ConditionCheck's own error path (an expression-build failure) is
+// not practically triggerable from ordinary inputs.
+func TestTransactWrite_Delete_SkipsWhenErrAlreadySet(t *testing.T) {
+	keyItem := &widget{Model: Model{ID: uuid.New()}}
+	sentinel := errors.New("boom: pre-existing builder error")
+
+	b := &TransactWriteBuilder{db: testDB(&stubClient{}), err: sentinel}
+	b.Delete(keyItem)
+
+	if len(b.ops) != 0 {
+		t.Errorf("ops = %v, want no entry queued once b.err is already set", b.ops)
+	}
+	if !errors.Is(b.err, sentinel) {
+		t.Errorf("b.err = %v, want unchanged sentinel %v", b.err, sentinel)
 	}
 }
 

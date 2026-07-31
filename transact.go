@@ -120,15 +120,6 @@ func (b *TransactGetBuilder) Run(ctx context.Context) error {
 	return nil
 }
 
-// TransactWriteBuilder is a fluent builder for a heterogeneous
-// transactional write of up to 100 combined Put/Delete/ConditionCheck
-// entries — possibly of different Go types embedding [Model] — obtained
-// via [TransactWrite]. Unlike [BatchWriteBuilder], it operates on any
-// pointer to a struct embedding Model, since one DynamoDB transaction can
-// span multiple item types in a single atomic call; and unlike
-// [BatchWriteBuilder.Put], its Put preserves full optimistic-lock /
-// create-vs-update conditional semantics, since TransactWriteItems (unlike
-// BatchWriteItem) supports a per-item ConditionExpression.
 // transactWriteOp is one queued Put/Delete/ConditionCheck entry on a
 // [TransactWriteBuilder], preserving the call order of interleaved
 // Put/Delete/ConditionCheck calls. Delete and ConditionCheck entries are
@@ -197,6 +188,9 @@ func (b *TransactWriteBuilder) Put(item any) *TransactWriteBuilder {
 // computed via [PK]/[SK] — same as [TransactGetBuilder.Get]'s dst. No
 // condition is attached.
 func (b *TransactWriteBuilder) Delete(keyItem any) *TransactWriteBuilder {
+	if b.err != nil {
+		return b
+	}
 	pk, sk := PK(keyItem), SK(keyItem)
 	b.ops = append(b.ops, transactWriteOp{entry: types.TransactWriteItem{
 		Delete: &types.Delete{
@@ -260,7 +254,10 @@ func (b *TransactWriteBuilder) ConditionCheck(keyItem any, expectedVersion int) 
 // mapped to ErrOptimisticLock.
 func (b *TransactWriteBuilder) Run(ctx context.Context) error {
 	if b.err != nil {
-		return fmt.Errorf("godynamo: transact write: %w", b.err)
+		// b.err (set by ConditionCheck's expression-build failure) is
+		// already godynamo-prefixed -- wrap with %w for context without
+		// repeating the prefix.
+		return fmt.Errorf("transact write: %w", b.err)
 	}
 	if len(b.ops) == 0 {
 		return nil
@@ -280,7 +277,9 @@ func (b *TransactWriteBuilder) Run(ctx context.Context) error {
 		}
 		av, cond, err := stampAndMarshal(ctx, b.db, op.put)
 		if err != nil {
-			return fmt.Errorf("godynamo: transact write: %w", err)
+			// stampAndMarshal's error is already godynamo-prefixed -- wrap
+			// with %w for context without repeating the prefix.
+			return fmt.Errorf("transact write: %w", err)
 		}
 		expr, err := expression.NewBuilder().WithCondition(cond).Build()
 		if err != nil {
