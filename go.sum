@@ -44,8 +44,8 @@ github.com/aws/aws-sdk-go-v2/service/sts v1.51.1 h1:0HOqZXRvMytH6bFHVIc0oJX07sZj
 github.com/aws/aws-sdk-go-v2/service/sts v1.51.1/go.mod h1:26zA0GhDrLo+yiLI2yXWxqB1PdsShfLikoI7GOEgugM=
 github.com/aws/smithy-go v1.28.1 h1:R/nXH00c8qcfCzQVELtRw+eLQWtzv+VAIEFJ1/xxXlQ=
 github.com/aws/smithy-go v1.28.1/go.mod h1:YE2RhdIuDbA5E5bTdciG9KrW3+TiEONeUWCqxX9i1Fc=
-github.com/blackbirdworks/gopherstack v1.6.0 h1:noFMqCudPSuAHDBXTmF8S1bXTWGgfH0C/TgLcDdOpYA=
-github.com/blackbirdworks/gopherstack v1.6.0/go.mod h1:ds0vl+mJ6LbaHFYgbbBpJ6AFNur1gjY+igCIHp3PHQY=
+github.com/blackbirdworks/gopherstack v1.7.0 h1:f0W21gWyGZmcDHmvHxvO07898lRe4JEa9J2bq00fmuc=
+github.com/blackbirdworks/gopherstack v1.7.0/go.mod h1:ytAF/iyu4NtWlfh9FtIH4Rr8bLjBU2RLNrh8STE0XUI=
 github.com/cenkalti/backoff/v4 v4.3.0 h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=
 github.com/cenkalti/backoff/v4 v4.3.0/go.mod h1:Y3VNntkOUPxTVeUxJ/G5vcM//AlwfmyYozVcomhLiZE=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=

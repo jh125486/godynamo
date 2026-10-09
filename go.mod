@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.21.8
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression v1.9.8
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.70.0
-	github.com/blackbirdworks/gopherstack v1.6.0
+	github.com/blackbirdworks/gopherstack v1.7.0
 	github.com/google/uuid v1.6.0
 	github.com/testcontainers/testcontainers-go v0.44.0
 )
